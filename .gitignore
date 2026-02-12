@@ -1,0 +1,13 @@
+node_modules
+client/node_modules
+server/node_modules
+client/dist
+server/dist
+server/uploads/*
+!server/uploads/.gitkeep
+.env
+*.log
+credentials.txt
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
