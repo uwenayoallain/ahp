@@ -1,0 +1,46 @@
+:root {
+  --font-body: "Manrope", "Helvetica Neue", sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", monospace;
+
+  --color-bg: #f3f1eb;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f7f5ef;
+  --color-surface-raised: #faf9f5;
+  --color-border: #d5d2c8;
+  --color-border-subtle: #e4e1d9;
+  --color-text: #232724;
+  --color-text-muted: #6b7269;
+  --color-text-dim: #8f958c;
+  --color-primary: #2f5c49;
+  --color-primary-hover: #24493a;
+  --color-primary-soft: #e6eee9;
+  --color-success: #2f7a4d;
+  --color-success-soft: #e3f1e8;
+  --color-warning: #9a5d22;
+  --color-warning-soft: #f6ece1;
+  --color-danger: #b53b33;
+  --color-danger-soft: #fce8e6;
+  --color-accent: #5c4b8a;
+  --color-accent-soft: #eeebf5;
+
+  --shadow-sm: 0 1px 3px rgba(20, 24, 22, 0.06);
+  --shadow-md: 0 2px 8px rgba(20, 24, 22, 0.08);
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+
+  --transition-fast: 120ms ease;
+  --transition-normal: 180ms ease;
+}
