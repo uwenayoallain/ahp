@@ -1,0 +1,275 @@
+# Aegis Hackathon Platform (AHP) — Implementation Plan
+
+An **offline-first progressive web application** for managing hackathon events: schedules, rules, digital skills modules, multi-step project submissions — all fully functional without internet, with automatic background sync when connectivity returns.
+
+---
+
+## Tech Stack
+
+| Layer | Choice | Rationale |
+|---|---|---|
+| **Frontend** | **Vite + React 18 + TypeScript** | Fast DX, tree-shaking, native PWA plugin |
+| **Styling** | **Vanilla CSS** with custom properties design system | Full control, no framework overhead |
+| **Routing** | **React Router v6** | Standard, SSR-ready if needed later |
+| **Local DB** | **IndexedDB** via `idb` wrapper | Structured offline storage with promises |
+| **PWA** | **vite-plugin-pwa** (Workbox) | Precaching, runtime caching, background sync |
+| **Backend** | **Express + TypeScript + SQLite** (via `better-sqlite3`) | Zero-config DB, single-binary deploy |
+| **Auth** | **JWT** (access + refresh tokens) | Stateless, works offline once issued |
+| **File Storage** | Local `uploads/` directory | Simple, can swap to S3 later |
+
+---
+
+## Project Structure
+
+```
+ahp/
+├── client/                    # Vite React app
+│   ├── public/
+│   │   └── manifest.json
+│   ├── src/
+│   │   ├── components/        # Reusable UI components
+│   │   │   ├── ui/            # Design system primitives
+│   │   │   ├── layout/        # Shell, Navbar, Sidebar
+│   │   │   └── forms/         # Multi-step form components
+│   │   ├── pages/             # Route pages
+│   │   │   ├── Home.tsx
+│   │   │   ├── Schedule.tsx
+│   │   │   ├── Rules.tsx
+│   │   │   ├── SkillModules.tsx
+│   │   │   ├── SubmitProject.tsx
+│   │   │   ├── Login.tsx
+│   │   │   └── admin/
+│   │   │       ├── Dashboard.tsx
+│   │   │       ├── Submissions.tsx
+│   │   │       └── Progress.tsx
+│   │   ├── lib/
+│   │   │   ├── db.ts          # IndexedDB schema & helpers
+│   │   │   ├── sync.ts        # Sync engine client-side logic
+│   │   │   ├── api.ts         # Fetch wrapper with offline fallback
+│   │   │   └── auth.ts        # JWT helpers
+│   │   ├── hooks/             # Custom React hooks
+│   │   ├── context/           # Auth, Network, Theme providers
+│   │   ├── styles/
+│   │   │   ├── tokens.css     # Design tokens
+│   │   │   ├── reset.css      # CSS reset
+│   │   │   └── global.css     # Global styles
+│   │   ├── sw.ts              # Service worker source
+│   │   ├── App.tsx
+│   │   └── main.tsx
+│   ├── index.html
+│   ├── vite.config.ts
+│   └── tsconfig.json
+├── server/                    # Express API
+│   ├── src/
+│   │   ├── routes/
+│   │   │   ├── auth.ts
+│   │   │   ├── sync.ts
+│   │   │   ├── submissions.ts
+│   │   │   └── admin.ts
+│   │   ├── middleware/
+│   │   │   ├── auth.ts
+│   │   │   └── upload.ts
+│   │   ├── db/
+│   │   │   ├── schema.sql
+│   │   │   └── connection.ts
+│   │   ├── services/
+│   │   │   ├── sync.ts
+│   │   │   └── submissions.ts
+│   │   └── index.ts
+│   ├── uploads/
+│   ├── tsconfig.json
+│   └── package.json
+├── package.json               # Root workspace
+└── README.md
+```
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Tech stack confirmation needed.** The plan uses **Vite + React + TypeScript** for the frontend and **Express + SQLite** for the backend. If you prefer a different framework (Next.js, Vue, PostgreSQL, etc.), please let me know before I begin.
+
+> [!IMPORTANT]
+> **Monorepo vs separate repos.** The plan uses a monorepo with `client/` and `server/` workspaces. Is this acceptable, or would you prefer separate repositories?
+
+> [!WARNING]
+> **Scope is large.** This is a 5-phase build. I will implement each phase sequentially and check in with you at key milestones. Phase 1 (scaffolding + core UI) will be built first.
+
+---
+
+## Proposed Changes
+
+### Phase 0 — Scaffolding & Foundation
+
+#### [NEW] Root project setup
+- Initialize npm workspace with `client/` and `server/` packages
+- Configure shared TypeScript settings
+- Add `.gitignore`, `README.md`
+
+#### [NEW] `client/` — Vite React PWA app
+- Scaffold with `create-vite` (React + TypeScript template)
+- Install dependencies: `react-router-dom`, `idb`, `vite-plugin-pwa`
+- Configure `vite.config.ts` with PWA plugin (precache app shell, schedules, rules data)
+- Set up `manifest.json` (name, icons, theme color, display: standalone)
+
+#### [NEW] `server/` — Express API
+- Initialize with TypeScript, `better-sqlite3`, `multer`, `jsonwebtoken`, `bcryptjs`
+- Create SQLite schema: `users`, `submissions`, `skill_progress`, `sync_queue`
+- Wire up basic health-check route
+
+---
+
+### Phase 1 — Frontend & UI
+
+#### Design System (`client/src/styles/`)
+- `tokens.css`: CSS custom properties for colors (dark/light), typography scale, spacing, radii, shadows
+- `reset.css`: Modern CSS reset
+- `global.css`: Base element styles
+
+#### Layout Components (`client/src/components/layout/`)
+- `AppShell.tsx`: Responsive layout with mobile bottom nav + desktop sidebar
+- `Navbar.tsx`: Logo, nav links, network status indicator, user menu
+- `Sidebar.tsx`: Desktop navigation panel
+
+#### Pages (`client/src/pages/`)
+- `Home.tsx`: Dashboard landing with event countdown, quick links
+- `Schedule.tsx`: Timeline/agenda view of hackathon events, filterable by day
+- `Rules.tsx`: Formatted rules document with accordion sections
+- `SkillModules.tsx`: Card grid of digital skill lessons with progress bars
+- `SubmitProject.tsx`: Multi-step form wizard:
+  - Step 1: Team info (name, members)
+  - Step 2: Project details (title, description, category)
+  - Step 3: Media upload (images, video, documents)
+  - Step 4: Review & submit
+- `Login.tsx`: Auth form (login / register toggle)
+
+---
+
+### Phase 2 — Offline Capabilities
+
+#### Service Worker (`client/src/sw.ts` via `vite-plugin-pwa`)
+- **Precache**: App shell HTML, CSS, JS bundles, fonts, icons
+- **Runtime cache**: Schedule JSON (StaleWhileRevalidate), Rules content (CacheFirst), API responses (NetworkFirst)
+- **Offline fallback**: Serve cached page when offline
+
+#### IndexedDB Layer (`client/src/lib/db.ts`)
+- Database: `ahp-db`, version 1
+- Object stores:
+  - `submissions` — queued project submissions (status: draft | queued | synced)
+  - `skillProgress` — module completion states per user
+  - `syncQueue` — generic sync action queue with timestamps
+  - `mediaFiles` — blob storage for uploaded files pending sync
+- Helper functions: `addSubmission()`, `getSubmissions()`, `updateSyncStatus()`, etc.
+
+#### Offline Flow
+- All form data saves to IndexedDB immediately
+- Network status context provides `isOnline` flag across the app
+- Visual indicators: "Saved offline" badge, pending sync count
+
+---
+
+### Phase 3 — Synchronization Engine
+
+#### Background Sync (`client/src/lib/sync.ts`)
+- Register `sync` event tag `ahp-sync` in service worker
+- On `sync` event: read all `queued` items from IndexedDB, POST to server
+- On success: mark items as `synced` in IndexedDB
+- On failure: leave as `queued` for retry
+
+#### Conflict Resolution
+- Each record carries `updatedAt` (ISO timestamp) and `version` (incrementing integer)
+- Server compares incoming `version` against stored `version`
+- If incoming ≥ stored → accept. If incoming < stored → reject with 409 + server copy
+- Client resolves by re-fetching latest and notifying user of conflict
+
+#### Media Upload
+- Large files chunked into ≤ 5 MB parts
+- Upload endpoint accepts multipart chunks with `X-Chunk-Index` / `X-Total-Chunks` headers
+- Server reassembles on final chunk receipt
+
+---
+
+### Phase 4 — Backend API
+
+#### Auth Routes (`server/src/routes/auth.ts`)
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/auth/register` | Create user account |
+| POST | `/api/auth/login` | Issue JWT tokens |
+| POST | `/api/auth/refresh` | Refresh access token |
+
+#### Sync Routes (`server/src/routes/sync.ts`)
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/sync` | Bulk receive queued data |
+| POST | `/api/sync/media` | Chunked media upload |
+| GET | `/api/sync/status` | Check sync status for user |
+
+#### Submission Routes (`server/src/routes/submissions.ts`)
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/submissions` | List user submissions |
+| GET | `/api/submissions/:id` | Submission detail |
+
+#### Admin Routes (`server/src/routes/admin.ts`)
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/admin/submissions` | All submissions (filterable) |
+| GET | `/api/admin/users` | User list with progress |
+| GET | `/api/admin/stats` | Dashboard stats |
+
+#### Database Schema (`server/src/db/schema.sql`)
+- `users`: id, name, email, password_hash, role, created_at
+- `submissions`: id, user_id, team_name, project_title, description, category, status, version, created_at, updated_at
+- `submission_media`: id, submission_id, file_path, file_type, chunk_status
+- `skill_progress`: id, user_id, module_id, status, completed_at, version
+- `sync_log`: id, user_id, action, entity_type, entity_id, timestamp, status
+
+---
+
+### Phase 5 — Admin Dashboard
+
+#### Admin Pages (`client/src/pages/admin/`)
+- `Dashboard.tsx`: Stats cards (total submissions, active users, sync success rate), recent activity feed
+- `Submissions.tsx`: Data table with search, filter by status/category/date, sort, pagination
+- `SubmissionDetail.tsx`: Full submission with media preview, timeline of sync events
+- `Progress.tsx`: User progress heatmap/table across skill modules
+
+---
+
+## Verification Plan
+
+### Automated Tests
+
+1. **TypeScript compilation check**
+   ```bash
+   cd /home/rca/projects/personal/ahp/client && npx tsc --noEmit
+   cd /home/rca/projects/personal/ahp/server && npx tsc --noEmit
+   ```
+
+2. **Vite build check** (verifies bundling, PWA generation, service worker output)
+   ```bash
+   cd /home/rca/projects/personal/ahp/client && npm run build
+   ```
+   Expected: `dist/` folder contains `index.html`, `sw.js`, `manifest.webmanifest`, hashed assets
+
+3. **Server startup check**
+   ```bash
+   cd /home/rca/projects/personal/ahp/server && npm run dev &
+   curl http://localhost:3001/api/health
+   ```
+   Expected: `{ "status": "ok" }`
+
+### Browser Verification
+
+4. **UI rendering**: Open `http://localhost:5173` in browser, verify all pages render (Home, Schedule, Rules, Skills, Submit, Login)
+5. **Responsive design**: Resize browser to 375px width, verify mobile layout with bottom navigation
+6. **Offline mode**: Use DevTools to go offline, verify the app still loads and forms save to IndexedDB
+7. **PWA install**: Check that the browser shows an install prompt and the manifest is valid
+
+### Manual Verification (User)
+
+8. **End-to-end offline flow**: Go offline → fill out submission form → submit → go online → verify data syncs to server
+9. **Admin dashboard**: Log in as admin → verify submissions list loads → filter and search works
+10. **Visual review**: User reviews overall design aesthetics, responsiveness, and polish
