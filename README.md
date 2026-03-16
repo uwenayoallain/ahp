@@ -34,9 +34,8 @@ pnpm test
 
 ## Seeded Credentials
 
-The server automatically seeds local development data (except in tests).
+The server automatically seeds local development data.
 
-See credentials in [credentials.txt](credentials.txt):
-
+Seed Data:
 - admin account: admin@ahp.rw / admin123
 - participant accounts: ari@ahp.rw, lena@ahp.rw, sam@ahp.rw, noah@ahp.rw, mina@ahp.rw (all use admin123)
