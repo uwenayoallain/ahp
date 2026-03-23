@@ -4,498 +4,412 @@
 
 ### 1.1 System Name
 
-Aegis Hackathon Platform (AHP)
+Aegis Hackathon Platform
 
 ### 1.2 Document Status
 
-Current implementation baseline
+Current approved requirements baseline
 
 ### 1.3 Last Updated
 
-March 28, 2026
+March 29, 2026
 
-### 1.4 Document Purpose
+### 1.4 Purpose
 
-This Software Requirements Specification (SRS) defines the current required behavior, interfaces, data model, constraints, and quality attributes of the Aegis Hackathon Platform.
+This Software Requirements Specification defines what the Aegis Hackathon Platform shall do for public visitors, participants, team leads, judges, and organizers.
 
-This document is the authoritative requirements baseline for the repository and shall be updated whenever the implemented system behavior, interfaces, or constraints materially change.
+This document describes the product behavior and operating rules of the platform. It is not intended to describe source code structure or internal implementation details.
 
-## 2. Introduction
+## 2. Scope
 
-### 2.1 Purpose
+The platform supports the planning and delivery of online hackathons. It presents the active event, challenge calendar, rules, team workflow, submissions, scoring, participant progress, and organizer controls in a single product.
 
-AHP is an offline-first progressive web application for running hackathons. It supports public event discovery, participant workflows, team management, challenge submissions, admin review, and background synchronization when connectivity is intermittent.
+The platform shall support:
 
-### 2.2 Scope
+- publication of the current or next active hackathon
+- online-first challenge delivery and event scheduling
+- participant sign-in and protected event access
+- request-based team membership
+- challenge submission and review
+- organizer management of hackathons, challenges, schedule items, rules, and skill tracks
+- continuity during unstable connectivity
 
-The system supports:
+The platform shall not depend on physical venues or in-person event assumptions.
 
-- Public access to event information and leaderboard data
-- Participant authentication and protected application access
-- Viewing active hackathon content, schedules, rules, challenges, and skill tracks
-- Team creation, joining, and leaving
-- Challenge submission with local persistence and deferred synchronization
-- Admin oversight of submissions, users, progress, and scoring
+## 3. Product Overview
 
-The system does not currently provide:
+The platform is an online hackathon workspace. It gives participants one place to understand what event is active, what is happening now, which challenge day is open, what deadlines are approaching, how teams are managed, and how progress is being measured.
 
-- A client-side binary media upload workflow in the submission UI
-- A participant-facing UI for updating skill progress
-- A full offline mirror of all server-backed data
+The homepage for signed-in participants shall surface the active or upcoming hackathon, the event phase, the next published online sessions, challenge availability, and personal progress indicators.
 
-### 2.3 Definitions
+The platform shall treat one hackathon as the active participant-facing event at a time.
 
-- PWA: Progressive Web Application
-- JWT: JSON Web Token
-- Sync queue: Client-side IndexedDB store that stages actions for later server synchronization
-- Active hackathon: The single hackathon record marked as active in the database
-- Participant: Authenticated non-admin user
+## 4. User Classes
 
-## 3. Overall Description
+### 4.1 Public Visitor
 
-### 3.1 Product Perspective
+A public visitor may:
 
-AHP is a two-workspace monorepo composed of:
+- read public event information
+- view published leaderboard information
+- access sign-in entry points
 
-- a React 19 + Vite client PWA
-- an Express 5 + SQLite server API
+### 4.2 Participant
 
-The client is optimized for intermittent connectivity through service-worker caching and local IndexedDB persistence. The server is responsible for authentication, authoritative data storage, conflict handling, and admin operations.
+A participant may:
 
-### 3.2 User Classes
+- view the active hackathon overview
+- see challenge days, rules, timeline items, and skill tracks
+- create a team or request access to a team
+- submit challenge work
+- review personal progress and submission status
 
-- Public visitor
-  - Views landing and leaderboard pages
-  - Accesses login and registration
-- Participant
-  - Accesses protected application routes
-  - Views hackathon content and personal statistics
-  - Creates or joins a team
-  - Creates submissions that are queued locally and synced to the server
-- Admin
-  - Has all participant capabilities
-  - Reviews and scores submissions
-  - Views user and platform-wide reporting
+### 4.3 Team Lead
 
-### 3.3 Operating Environment
+A team lead is a participant with additional authority over a team. A team lead may:
 
-- Client
-  - Modern browser with IndexedDB and service-worker support
-  - React 19, Vite 7, React Router 7
-- Server
-  - Node.js runtime
-  - Express 5
-  - SQLite via `better-sqlite3`
+- approve or reject pending team access requests for that team
+- manage team composition before the team becomes locked
 
-### 3.4 Design Constraints
+### 4.4 Admin
 
-- The system shall remain compatible with the monorepo workspace structure
-- The client shall use IndexedDB for local persistence
-- The server shall use SQLite as the primary datastore
-- Protected server APIs shall use JWT-based authentication
-- The client shall support degraded operation during network loss
+An admin may:
 
-### 3.5 Assumptions And Dependencies
+- manage hackathon configuration
+- activate the current hackathon
+- manage challenges, timeline items, rules, and skill tracks
+- review and score submissions
+- monitor participant and event progress
 
-- Exactly one hackathon is expected to be active at a time
-- Background Sync support may be unavailable in some browsers, so direct queue flushing is required as a fallback
-- Client routes rely on browser-based routing with the app shell cached for offline navigation fallback
+## 5. Operating Model
 
-## 4. System Diagrams
+### 5.1 Active Hackathon
 
-### 4.1 System Context Diagram
+The platform shall present one active hackathon to participants at a time.
+
+The active hackathon shall include:
+
+- event name and description
+- event start and end dates
+- challenge lineup
+- published timeline items
+- rules
+- skill tracks
+- event policies such as team size and late-submission handling
+
+### 5.2 Online-Only Event Delivery
+
+The platform shall support hackathons that run fully online.
+
+Published event timeline items shall use online channels such as:
+
+- livestreams
+- workshop streams
+- mentor channels
+- help desk channels
+- community chat
+- submission portal
+
+The platform shall not require physical venue information for a valid event schedule.
+
+### 5.3 Event Phase
+
+For the active hackathon, the platform shall identify whether the event is:
+
+- upcoming
+- live
+- completed
+
+This phase shall be visible to participants on the homepage.
+
+## 6. System Diagrams
+
+### 6.1 Context Diagram
 
 ```mermaid
 flowchart LR
   public[Public Visitor]
   participant[Participant]
+  lead[Team Lead]
   admin[Admin]
 
-  client[AHP Client PWA]
-  server[AHP Server API]
-  db[(SQLite Database)]
-  uploads[(Uploads Storage)]
+  platform[Aegis Hackathon Platform]
+  channels[Online Event Channels]
 
-  public --> client
-  participant --> client
-  admin --> client
+  public --> platform
+  participant --> platform
+  lead --> platform
+  admin --> platform
 
-  client --> server
-  server --> db
-  server --> uploads
+  platform --> channels
 ```
 
-### 4.2 Container Diagram
+### 6.2 Experience Flow
 
 ```mermaid
-flowchart TB
-  subgraph Client
-    router[React Router]
-    pages[Pages and Layouts]
-    auth[Auth Context]
-    network[Network Context]
-    api[apiRequest]
-    localdb[(IndexedDB)]
-    sw[Service Worker]
-    sync[Sync Module]
-  end
-
-  subgraph Server
-    express[Express App]
-    routes[Route Modules]
-    services[Service Modules]
-    sqlite[(SQLite)]
-    files[(Uploads Directory)]
-  end
-
-  router --> pages
-  pages --> auth
-  pages --> network
-  pages --> api
-  pages --> localdb
-  sync --> localdb
-  sw --> sync
-  api --> express
-  express --> routes
-  routes --> services
-  services --> sqlite
-  routes --> sqlite
-  routes --> files
+flowchart TD
+  A[View active hackathon] --> B[Read timeline and rules]
+  B --> C[Join or create a team]
+  C --> D[Open challenge brief]
+  D --> E[Prepare and submit work]
+  E --> F[Review score and standing]
+  F --> G[Continue to next challenge day]
 ```
 
-### 4.3 Submission Sync Sequence
+### 6.3 Team Access and Submission Control
 
 ```mermaid
-sequenceDiagram
-  participant User
-  participant UI as Submit Project UI
-  participant IDB as IndexedDB
-  participant SW as Service Worker
-  participant API as Server API
-  participant DB as SQLite
-
-  User->>UI: Complete submission form
-  UI->>IDB: Save local submission
-  UI->>IDB: Enqueue sync action
-  UI->>SW: Request background sync
-  SW-->>UI: Trigger queue flush message
-  UI->>IDB: Read queued actions
-  UI->>API: POST /api/sync
-  API->>DB: Create or update submission
-  DB-->>API: Persisted result
-  API-->>UI: created or updated or conflict
-  UI->>IDB: Mark queue item synced or failed
+flowchart TD
+  A[Participant requests team access] --> B{Team lead reviews request}
+  B -->|Approve| C[Participant becomes team member]
+  B -->|Reject| D[Request closed]
+  C --> E{First submission made?}
+  E -->|No| F[Team membership may still change]
+  E -->|Yes| G[Team becomes locked]
+  G --> H[No more join approvals or voluntary leaves]
 ```
 
-### 4.4 Core Data Model Diagram
+### 6.4 Submission and Review Lifecycle
 
 ```mermaid
-erDiagram
-  USERS ||--o{ SUBMISSIONS : creates
-  USERS ||--o{ TEAM_MEMBERS : joins
-  USERS ||--o{ REFRESH_TOKENS : owns
-  USERS ||--o{ SKILL_PROGRESS : tracks
-  USERS ||--o{ SYNC_LOG : generates
-
-  HACKATHONS ||--o{ CHALLENGES : contains
-  HACKATHONS ||--o{ TEAMS : contains
-  HACKATHONS ||--o{ SCHEDULE_EVENTS : schedules
-  HACKATHONS ||--o{ RULES : defines
-  HACKATHONS ||--o{ SKILL_MODULES : offers
-
-  TEAMS ||--o{ TEAM_MEMBERS : includes
-  TEAMS ||--o{ SUBMISSIONS : owns
-
-  CHALLENGES ||--o{ SUBMISSIONS : receives
-  SUBMISSIONS ||--o{ SUBMISSION_MEDIA : attaches
+stateDiagram-v2
+  [*] --> Draft
+  Draft --> Queued
+  Queued --> Submitted
+  Submitted --> Reviewed
+  Submitted --> NeedsRevision
+  Reviewed --> [*]
+  NeedsRevision --> Submitted
 ```
 
-## 5. External Interface Requirements
+## 7. Functional Requirements
 
-### 5.1 Client Route Interface
+### 7.1 Public Information
 
-The client shall expose the following routes:
+- FR-1: The platform shall present a public overview of the current event and public leaderboard information.
+- FR-2: The platform shall provide a public entry point for participant sign-in.
+- FR-3: The platform shall allow public viewers to understand whether a hackathon is upcoming, live, or completed.
 
-- `/`
-- `/login`
-- `/leaderboard`
-- `/app`
-- `/app/challenges`
-- `/app/challenges/:slug`
-- `/app/leaderboard`
-- `/app/teams`
-- `/app/rules`
-- `/app/tracks`
-- `/app/submit`
-- `/app/submissions`
-- `/app/submissions/:id`
-- `/app/admin/dashboard`
-- `/app/admin/submissions`
-- `/app/admin/submissions/:id`
-- `/app/admin/progress`
+### 7.2 Participant Access
 
-### 5.2 API Interface
+- FR-4: The platform shall allow authenticated participants to access protected event pages.
+- FR-5: The platform shall create a participant profile when a valid authenticated user enters the platform for the first time.
+- FR-6: The platform shall restrict organizer-only areas to admins.
 
-The server shall expose the following API surface:
+### 7.3 Participant Homepage
 
-- `GET /api/health`
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `POST /api/auth/refresh`
-- `POST /api/auth/logout`
-- `POST /api/sync`
-- `GET /api/sync/status`
-- `POST /api/sync/media`
-- `GET /api/submissions/categories`
-- `GET /api/submissions`
-- `GET /api/submissions/:id`
-- `GET /api/admin/submissions`
-- `GET /api/admin/submissions/:id`
-- `GET /api/admin/users`
-- `GET /api/admin/stats`
-- `PATCH /api/admin/submissions/:id/score`
-- `GET /api/hackathons/active`
-- `GET /api/challenges`
-- `GET /api/challenges/:idOrSlug`
-- `GET /api/schedule`
-- `GET /api/rules`
-- `GET /api/skill-modules`
-- `GET /api/leaderboard`
-- `GET /api/teams`
-- `POST /api/teams`
-- `POST /api/teams/:id/join`
-- `POST /api/teams/:id/leave`
-- `GET /api/me/stats`
+- FR-7: The participant homepage shall show the active or upcoming hackathon name and summary.
+- FR-8: The participant homepage shall show the event phase.
+- FR-9: The participant homepage shall show the event date window.
+- FR-10: The participant homepage shall show the next published online sessions or milestones.
+- FR-11: The participant homepage shall show the participant’s team status.
+- FR-12: The participant homepage shall show submission count, reviewed score, team rank when available, and skill-track completion progress.
+- FR-13: The participant homepage shall provide guidance on what to do next based on available event data and participant status.
 
-### 5.3 Authentication Interface
+### 7.4 Hackathon Content
 
-- The client shall send JWT access tokens in the `Authorization: Bearer <token>` header for protected requests
-- The client shall use refresh-token rotation through `POST /api/auth/refresh`
-- The server shall reject unauthorized protected requests with HTTP `401`
-- The server shall reject forbidden admin-only requests with HTTP `403`
+- FR-14: The platform shall show the published challenge days for the active hackathon.
+- FR-15: The platform shall show challenge details including title, summary, instructions, resources, score value, unlock time, and submission deadline.
+- FR-16: The platform shall show published timeline items for the active hackathon.
+- FR-17: Timeline items shall support online channel references instead of requiring physical venue details.
+- FR-18: The platform shall show published rules for the active hackathon.
+- FR-19: The platform shall show published skill tracks for the active hackathon.
 
-### 5.4 Upload Interface
+### 7.5 Team Management
 
-- The sync media endpoint shall accept multipart form data
-- The multipart payload shall include a file field named `chunk`
-- The request shall provide `X-Chunk-Index` and `X-Total-Chunks`
-- The optional `uploadId` shall contain only alphanumeric, underscore, and hyphen characters
+- FR-20: The platform shall allow a participant who is not already on a team to create a team within the active hackathon.
+- FR-21: The platform shall allow a participant to view all published teams in the active hackathon.
+- FR-22: The platform shall show whether a team is open, full, or locked.
+- FR-23: The platform shall require request-based access for joining an existing team.
+- FR-24: The platform shall allow a team lead to approve or reject requests for that lead’s team.
+- FR-25: The platform shall prevent a participant from belonging to more than one team in the active hackathon.
+- FR-26: The platform shall prevent approval of a team request when the team is full.
+- FR-27: The platform shall lock team membership after the first submission for that team.
+- FR-28: Once a team is locked, the platform shall prevent additional join approvals and voluntary team departures.
 
-## 6. Functional Requirements
+### 7.6 Challenge Availability and Submission
 
-### 6.1 Public Access Requirements
+- FR-29: The platform shall allow participants to prepare challenge submissions through the submission workflow.
+- FR-29A: The submission workflow shall explain what participants are expected to deliver for the selected challenge.
+- FR-29B: The submission workflow shall collect a project title, solution overview, reviewable delivery links, and a compact summary of delivered work.
+- FR-30: A submission shall be associated with the participant’s actual team membership, not with manually entered team identity.
+- FR-31: The platform shall allow submissions only for challenges published within the active hackathon.
+- FR-32: The platform shall reject submissions for challenges that are not yet unlocked.
+- FR-33: Each challenge shall support an explicit submission deadline.
+- FR-34: The platform shall apply the hackathon’s configured late-submission policy after the deadline.
+- FR-35: The platform shall show participants whether a challenge is locked, open, in a late window, or finished.
+- FR-36: Participants shall be able to review their own submission list and submission details.
 
-- FR-1: The system shall provide a public landing page at `/`
-- FR-2: The system shall provide a public leaderboard at `/leaderboard`
-- FR-3: The system shall provide authentication entry through `/login`
+### 7.7 Submission Review and Scoring
 
-### 6.2 Authentication Requirements
+- FR-37: Admins shall be able to review submitted work.
+- FR-38: Admins shall be able to assign a raw score to a submission.
+- FR-39: The platform shall calculate the final score after applying any configured late penalty.
+- FR-40: Leaderboards and participant totals shall use the final score.
+- FR-41: The platform shall reflect reviewed and returned-for-revision outcomes in the submission experience.
 
-- FR-4: The system shall allow user registration with `name`, `email`, and `password`
-- FR-5: The system shall reject registration requests missing required fields
-- FR-6: The system shall reject invalid email formats
-- FR-7: The system shall reject passwords shorter than 6 characters
-- FR-8: The system shall reject duplicate email addresses
-- FR-9: The system shall allow login with valid email and password credentials
-- FR-10: The system shall issue access and refresh tokens after successful registration and login
-- FR-11: The system shall support refresh-token rotation
-- FR-12: The client shall attempt session restoration on startup when a refresh token exists
-- FR-13: The client shall restrict protected application routes to authenticated users
-- FR-14: The client shall restrict admin routes to users with the `admin` role
+### 7.8 Hackathon Configuration
 
-### 6.3 Hackathon Content Requirements
+- FR-42: Admins shall be able to create and update hackathons.
+- FR-43: Admins shall be able to activate a hackathon for participant-facing use.
+- FR-44: Admins shall be able to define team-size rules for a hackathon.
+- FR-45: Admins shall be able to define the late-submission policy for a hackathon.
+- FR-46: Admins shall be able to create and update challenge days.
+- FR-47: Admins shall be able to create and update timeline items.
+- FR-48: Admins shall be able to create and update rules.
+- FR-49: Admins shall be able to create and update skill tracks.
 
-- FR-15: The system shall expose the active hackathon record
-- FR-16: The system shall expose the challenge list for the active hackathon
-- FR-17: The system shall expose challenge detail by id or slug
-- FR-18: The system shall expose schedule events for the active hackathon
-- FR-19: The system shall expose rules for the active hackathon
-- FR-20: The system shall expose skill modules for authenticated users
+### 7.9 Offline Continuity
 
-### 6.4 Participant Dashboard Requirements
+- FR-50: The platform shall preserve participant submission intent during temporary connectivity loss.
+- FR-51: The platform shall allow queued submission actions to synchronize after connectivity returns.
+- FR-52: The platform shall preserve participant access to previously loaded core pages and content during temporary network loss.
 
-- FR-21: The system shall provide an authenticated dashboard at `/app`
-- FR-22: The dashboard shall display submission count
-- FR-23: The dashboard shall display total reviewed score
-- FR-24: The dashboard shall display team rank when the user belongs to a ranked team
-- FR-25: The dashboard shall display the participant team name when present
-- FR-26: The dashboard shall display completed and total skill module counts
+### 7.10 Empty-State Behavior
 
-### 6.5 Team Management Requirements
+- FR-53: When a page has no relevant published data, the platform shall show a contextual empty state instead of an empty table or content shell.
+- FR-54: Empty states shall explain what is missing and, when possible, direct the user toward the next valid action.
 
-- FR-27: The system shall allow participants to view teams in the active hackathon
-- FR-28: The system shall allow a participant to view the participant's current team and members
-- FR-29: The system shall allow a participant not already on a team to create a team
-- FR-30: Team names shall have a minimum length of 2 characters
-- FR-31: Team names shall have a maximum length of 50 characters
-- FR-32: The system shall reject creation of a duplicate team name within the active hackathon
-- FR-33: The system shall prevent a participant from joining or creating more than one team in the active hackathon
-- FR-34: The system shall allow a participant to join an existing team
-- FR-35: The system shall allow a participant to leave the participant's team
-- FR-36: The system shall delete a team when its last member leaves
+## 8. Information Requirements
 
-### 6.6 Submission Requirements
+### 8.1 Hackathon Information
 
-- FR-37: The system shall provide a multi-step submission form
-- FR-38: The submission flow shall require a selected challenge before final submission
-- FR-39: The submission flow shall require a project title before final submission
-- FR-40: The submission flow shall require a description before final submission
-- FR-41: The submission form shall preload challenges, team information, and known submission categories when available
-- FR-42: The submission form shall remain usable when preload requests fail, with reduced assistance
-- FR-43: The client shall create a local submission record before remote synchronization
-- FR-44: The client shall generate a unique `localId` for locally created submissions
-- FR-45: The client shall enqueue a sync action for each locally created submission
-- FR-46: The system shall allow participants to view their submission list
-- FR-47: The system shall allow participants to view their own submission detail
-- FR-48: The system shall prevent a participant from reading another participant's submission detail
-- FR-49: The system shall expose the set of known submission categories
+Each hackathon shall maintain:
 
-### 6.7 Synchronization Requirements
+- name
+- description
+- start date
+- end date
+- active status
+- team size minimum and maximum
+- late-submission policy
 
-- FR-50: The client shall store queued sync actions in IndexedDB
-- FR-51: The client shall retry failed sync actions with backoff
-- FR-52: The client shall stop retrying a queued action after 5 failed attempts and mark it failed
-- FR-53: The client shall request browser Background Sync when available
-- FR-54: The client shall flush the sync queue directly when Background Sync is unavailable
-- FR-55: The server shall accept synchronized submission payloads through `POST /api/sync`
-- FR-56: The server shall create a submission when the user has no existing submission with the same `localId`
-- FR-57: The server shall update a submission when the incoming version is equal to or greater than the stored version
-- FR-58: The server shall return HTTP `409` and the server copy when the incoming version is older than the stored version
-- FR-59: The server shall expose a sync-status summary for the authenticated user
+### 8.2 Challenge Information
 
-### 6.8 Media Upload Requirements
+Each challenge day shall maintain:
 
-- FR-60: The server shall support chunked media upload through `POST /api/sync/media`
-- FR-61: The media upload endpoint shall validate `X-Chunk-Index`
-- FR-62: The media upload endpoint shall validate `X-Total-Chunks`
-- FR-63: The media upload endpoint shall reject a request without a `chunk` file
-- FR-64: The server shall assemble the final file after the last chunk is received
+- day number
+- title
+- summary
+- description
+- instructions
+- supporting resources
+- score value
+- unlock time
+- submission deadline
 
-### 6.9 Admin Requirements
+### 8.3 Timeline Information
 
-- FR-65: The system shall expose an admin dashboard
-- FR-66: The system shall expose a paginated admin submission list
-- FR-67: The system shall expose admin submission detail
-- FR-68: The system shall expose paginated user reporting with module progress summary
-- FR-69: The system shall expose aggregate admin statistics including total submissions, total users, and review rate
-- FR-70: The system shall allow an admin to score a submission
-- FR-71: The system shall reject negative scores
-- FR-72: The system shall reject scores above the challenge `max_points` when that maximum exists
-- FR-73: Scoring a submission shall set submission status to `reviewed`
+Each published timeline item shall maintain:
 
-### 6.10 Leaderboard Requirements
+- day number
+- time
+- title
+- online channel or event location label
+- display order
 
-- FR-74: The system shall expose a team leaderboard
-- FR-75: Leaderboard ranking shall sort by total score descending
-- FR-76: Leaderboard ranking shall break ties using submission count descending
+### 8.4 Team Information
 
-## 7. Data Requirements
+Each team shall maintain:
 
-### 7.1 Server Data Entities
+- team name
+- creator
+- current members
+- member roles
+- locked or unlocked status
 
-The system shall persist the following entities in SQLite:
+### 8.5 Team Access Request Information
 
-- `users`
-  - `id`, `name`, `email`, `password_hash`, `role`, `created_at`
-- `hackathons`
-  - `id`, `name`, `slug`, `description`, `start_date`, `end_date`, `is_active`, `created_at`
-- `challenges`
-  - `id`, `hackathon_id`, `day_number`, `title`, `slug`, `difficulty`, `summary`, `description`, `setup_instructions`, `resources`, `max_points`, `unlock_at`, `created_at`
-- `teams`
-  - `id`, `hackathon_id`, `name`, `created_by`, `created_at`
-- `team_members`
-  - `id`, `team_id`, `user_id`, `role`, `joined_at`
-- `schedule_events`
-  - `id`, `hackathon_id`, `day_number`, `time`, `title`, `venue`, `sort_order`
-- `rules`
-  - `id`, `hackathon_id`, `title`, `body`, `sort_order`
-- `skill_modules`
-  - `id`, `hackathon_id`, `title`, `description`, `sort_order`
-- `submissions`
-  - `id`, `user_id`, `local_id`, `team_id`, `team_name`, `challenge_id`, `project_title`, `description`, `category`, `status`, `score`, `version`, `created_at`, `updated_at`
-- `submission_media`
-  - `id`, `submission_id`, `local_id`, `file_path`, `file_type`, `chunk_status`, `created_at`
-- `skill_progress`
-  - `id`, `user_id`, `module_id`, `status`, `completed_at`, `version`, `updated_at`
-- `sync_log`
-  - `id`, `user_id`, `action`, `entity_type`, `entity_id`, `timestamp`, `status`, `error_message`
-- `refresh_tokens`
-  - `id`, `user_id`, `token_hash`, `expires_at`, `revoked`, `created_at`
+Each team access request shall maintain:
 
-### 7.2 Client Data Entities
+- requester
+- target team
+- current status
+- request message when provided
+- review details when processed
 
-The client shall persist the following stores in IndexedDB:
+### 8.6 Submission Information
 
-- `submissions`
-  - local submission records keyed by auto-increment id
-  - indexes by local id and status
-- `skillProgress`
-  - local skill progress keyed by module id
-- `syncQueue`
-  - queued sync actions keyed by auto-increment id
-  - includes retry count and next retry time
-- `mediaFiles`
-  - locally staged media blobs keyed by id
+Each submission shall maintain:
 
-### 7.3 Data Integrity Requirements
+- participant
+- team association when applicable
+- challenge association
+- project title
+- submission content summary
+- reviewable links or delivery references
+- delivery notes
+- category
+- review status
+- raw score when reviewed
+- final score after policy application
 
-- DR-1: User email addresses shall be unique
-- DR-2: Hackathon slugs shall be unique
-- DR-3: A challenge day number shall be unique within a hackathon
-- DR-4: Team names shall be unique within a hackathon
-- DR-5: A user shall not appear twice in the same team
-- DR-6: Skill progress shall be unique per user and module
-- DR-7: Refresh-token hashes shall be unique
+## 9. Business Rules
 
-## 8. Non-Functional Requirements
+- BR-1: Only one hackathon shall be participant-facing as the active event at a time.
+- BR-2: Team names shall be unique within the same hackathon.
+- BR-3: A participant shall not be a member of more than one team in the active hackathon.
+- BR-4: Team access to an existing team shall require approval by that team’s lead.
+- BR-5: A team shall become membership-locked after its first submission is recorded.
+- BR-6: Challenge availability shall follow published unlock times.
+- BR-7: Submission handling after the deadline shall follow the configured late policy for the active hackathon.
+- BR-8: Official sessions and support shall be treated as online event channels, not physical venue operations.
 
-### 8.1 Availability
+## 10. Non-Functional Requirements
 
-- NFR-1: The platform shall remain partially usable during network interruptions
-- NFR-2: The application shell shall remain available for offline navigation after caching
-- NFR-3: Cached schedule and rules data shall remain available offline when previously fetched
+### 10.1 Availability
 
-### 8.2 Performance
+- NFR-1: The platform shall remain usable during intermittent connectivity for core participant workflows.
+- NFR-2: Previously loaded event content should remain accessible during temporary network loss.
 
-- NFR-4: Public content endpoints for schedule, rules, and challenges should be cacheable for short durations
-- NFR-5: Paginated endpoints shall limit returned item counts through shared pagination logic
+### 10.2 Usability
 
-### 8.3 Security
+- NFR-3: Participant-facing pages shall make the current event state, next milestone, and next action easy to understand.
+- NFR-4: Time-sensitive information such as unlock times and deadlines shall be visible in participant workflows.
+- NFR-5: Admin configuration tasks shall be manageable without direct database editing.
+- NFR-5A: Pages with no current data shall remain understandable and useful through contextual empty-state messaging.
 
-- NFR-6: Protected routes shall require authentication
-- NFR-7: Admin routes shall require both authentication and admin authorization
-- NFR-8: Refresh tokens shall support revocation
-- NFR-9: Authentication endpoints shall be rate-limited
+### 10.3 Reliability
 
-### 8.4 Reliability
+- NFR-6: Submission actions shall not be silently lost when the participant temporarily disconnects.
+- NFR-7: The platform shall preserve review and scoring outcomes consistently across participant and admin views.
 
-- NFR-10: The sync queue shall preserve queued actions across browser sessions through IndexedDB
-- NFR-11: Failed sync items shall retain retry metadata
-- NFR-12: Version conflicts shall return the server copy instead of silently overwriting data
+### 10.4 Security
 
-### 8.5 Maintainability
+- NFR-8: Protected participant areas shall require authentication.
+- NFR-9: Organizer controls shall require admin authorization.
+- NFR-10: A participant shall not be able to read another participant’s private submission data.
+- NFR-11: A participant shall not be able to submit on behalf of a team the participant does not belong to.
 
-- NFR-13: The server shall expose `createApp()` for integration testing
-- NFR-14: Server tests shall execute against isolated temporary SQLite databases
-- NFR-15: This document shall be revised when implemented behavior, interfaces, or constraints materially change
+### 10.5 Maintainability
 
-## 9. Constraints And Known Limitations
+- NFR-12: This SRS shall be revised whenever user-visible behavior, event rules, or core workflows materially change.
 
-- KL-1: Participant skill-progress update flows are not currently exposed in the client UI
-- KL-2: The sync queue supports `skillProgress` actions, but the current server behavior ignores non-submission sync payloads
-- KL-3: The server supports chunked media upload, but the current submission UI does not upload binary files
-- KL-4: Client logout clears locally stored tokens immediately, while explicit backend logout for refresh-token revocation is a separate server endpoint
-- KL-5: Offline support is partial and centers on cached navigation, cached content, and queued submissions rather than full local replication of all remote data
-- KL-6: Automated tests exist for the server only
+## 11. Known Limitations
 
-## 10. Verification Basis
+- KL-1: User-dependent demonstration data is not available until real users exist in the authentication system.
+- KL-2: Binary media upload support is not yet exposed in the participant submission experience.
+- KL-3: Offline continuity is focused on essential navigation and queued submissions rather than a full local replica of all event data.
 
-This SRS is based on the implemented behavior present in:
+## 12. Acceptance Summary
 
-- client routing and protected-route definitions
-- server route registration and route handlers
-- SQLite schema definitions
-- IndexedDB schema and sync logic
-- current participant and admin page flows
+The platform shall be considered aligned with this SRS when:
 
-Conformance of future changes shall be checked against this document before changes are considered complete.
+- participants can understand the active or upcoming hackathon from the homepage
+- online sessions, challenge days, and deadlines are clearly published
+- team access follows request-and-approval rules
+- challenge availability and late handling follow configured event policy
+- admins can manage event content without changing application code
+- the platform continues to support participants through unstable connectivity
+
+## 13. Document Maintenance
+
+This document is the requirements baseline for the current product. It shall be updated whenever the platform changes in any material way, especially when changes affect:
+
+- event structure
+- participant journeys
+- team rules
+- challenge timing
+- scoring policy
+- organizer controls
+- offline behavior
