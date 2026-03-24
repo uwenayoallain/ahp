@@ -1,65 +1,104 @@
-import bcrypt from 'bcryptjs'
-import type Database from 'better-sqlite3'
+import { config } from 'dotenv'
+import { eq, sql } from 'drizzle-orm'
+import { getDb } from './connection.js'
+import {
+  challenges,
+  hackathons,
+  neonAuthUsersSync,
+  rules,
+  scheduleEvents,
+  skillModules,
+  skillProgress,
+  submissions,
+  syncLog,
+  teamMembers,
+  teams,
+  userProfiles,
+} from './schema.js'
+
+config({ path: '.env' })
 
 type SeedUser = {
+  id: string
   name: string
   email: string
   role: 'admin' | 'participant'
 }
 
-const SEEDED_PASSWORD = process.env.SEED_PASSWORD ?? 'admin123'
-
+// Hardcoded UUIDs for seeded users.
+// These must match users created in Neon Auth (via signUp or the dashboard).
 const seedUsers: SeedUser[] = [
-  { name: 'Admin User', email: 'admin@ahp.rw', role: 'admin' },
-  { name: 'Ari K', email: 'ari@ahp.rw', role: 'participant' },
-  { name: 'Lena M', email: 'lena@ahp.rw', role: 'participant' },
-  { name: 'Sam P', email: 'sam@ahp.rw', role: 'participant' },
-  { name: 'Noah J', email: 'noah@ahp.rw', role: 'participant' },
-  { name: 'Mina R', email: 'mina@ahp.rw', role: 'participant' },
+  { id: '00000000-0000-0000-0000-000000000001', name: 'Admin User', email: 'admin@ahp.rw', role: 'admin' },
+  { id: '00000000-0000-0000-0000-000000000002', name: 'Ari K', email: 'ari@ahp.rw', role: 'participant' },
+  { id: '00000000-0000-0000-0000-000000000003', name: 'Lena M', email: 'lena@ahp.rw', role: 'participant' },
+  { id: '00000000-0000-0000-0000-000000000004', name: 'Sam P', email: 'sam@ahp.rw', role: 'participant' },
+  { id: '00000000-0000-0000-0000-000000000005', name: 'Noah J', email: 'noah@ahp.rw', role: 'participant' },
+  { id: '00000000-0000-0000-0000-000000000006', name: 'Mina R', email: 'mina@ahp.rw', role: 'participant' },
 ]
 
-function seedUsersTable(db: Database.Database) {
-  const passwordHash = bcrypt.hashSync(SEEDED_PASSWORD, 10)
-  const insertUser = db.prepare(`
-    INSERT INTO users (name, email, password_hash, role)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(email) DO UPDATE SET
-      name = excluded.name,
-      password_hash = excluded.password_hash,
-      role = excluded.role
-  `)
+async function seedUserProfiles() {
+  const db = getDb()
+
+  // Look up actual users from neon_auth.users_sync by email.
+  // If they exist, use their real IDs. Otherwise skip user-dependent seeding.
+  const authUsers = await db.select({ id: neonAuthUsersSync.id, email: neonAuthUsersSync.email }).from(neonAuthUsersSync)
+  const authByEmail = new Map(authUsers.map((u: { email: string | null; id: string }) => [u.email, u.id]))
+
+  const resolved: Map<string, string> = new Map()
+
   for (const user of seedUsers) {
-    insertUser.run(user.name, user.email, passwordHash, user.role)
+    const realId = authByEmail.get(user.email)
+    if (!realId) {
+      console.log(`[seed] Skipping user profile for ${user.email} — not found in neon_auth.users_sync`)
+      continue
+    }
+    resolved.set(user.email, realId)
+
+    await db
+      .insert(userProfiles)
+      .values({ userId: realId, displayName: user.name, role: user.role })
+      .onConflictDoNothing()
   }
+
+  return resolved
 }
 
-function seedHackathon(db: Database.Database): number {
-  const existing = db.prepare('SELECT id FROM hackathons WHERE slug = ?').get('aegis-2026') as { id: number } | undefined
+async function seedHackathon(): Promise<number> {
+  const db = getDb()
+
+  const [existing] = await db
+    .select({ id: hackathons.id })
+    .from(hackathons)
+    .where(eq(hackathons.slug, 'aegis-2026'))
+
   if (existing) return existing.id
 
-  const info = db.prepare(`
-    INSERT INTO hackathons (name, slug, description, start_date, end_date, is_active)
-    VALUES (?, ?, ?, ?, ?, 1)
-  `).run(
-    'Aegis Hackathon 2026',
-    'aegis-2026',
-    'Five days of engineering challenges. Build, optimize, and ship real solutions under time pressure. Solo or team — every submission counts toward the leaderboard.',
-    '2026-03-16',
-    '2026-03-20',
-  )
-  return Number(info.lastInsertRowid)
+  const [row] = await db
+    .insert(hackathons)
+    .values({
+      name: 'Aegis Hackathon 2026',
+      slug: 'aegis-2026',
+      description: 'Five days of engineering challenges. Build, optimize, and ship real solutions under time pressure. Solo or team — every submission counts toward the leaderboard.',
+      startDate: new Date('2026-03-16T00:00:00Z'),
+      endDate: new Date('2026-03-20T00:00:00Z'),
+      isActive: true,
+    })
+    .returning({ id: hackathons.id })
+
+  return row.id
 }
 
-function seedChallenges(db: Database.Database, hackathonId: number) {
-  const count = (db.prepare('SELECT COUNT(*) as count FROM challenges WHERE hackathon_id = ?').get(hackathonId) as { count: number }).count
-  if (count > 0) return
+async function seedChallenges(hackathonId: number) {
+  const db = getDb()
 
-  const insert = db.prepare(`
-    INSERT INTO challenges (hackathon_id, day_number, title, slug, difficulty, summary, description, setup_instructions, resources, max_points, unlock_at)
-    VALUES (@hackathonId, @dayNumber, @title, @slug, @difficulty, @summary, @description, @setupInstructions, @resources, @maxPoints, @unlockAt)
-  `)
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(challenges)
+    .where(eq(challenges.hackathonId, hackathonId))
 
-  const challenges = [
+  if (Number(count) > 0) return
+
+  const challengeData = [
     {
       hackathonId,
       dayNumber: 1,
@@ -76,7 +115,7 @@ function seedChallenges(db: Database.Database, hackathonId: number) {
         { title: 'JSON Schema Spec', url: 'https://json-schema.org/understanding-json-schema/', type: 'reference' },
       ]),
       maxPoints: 100,
-      unlockAt: '2026-03-16T09:00:00Z',
+      unlockAt: new Date('2026-03-16T09:00:00Z'),
     },
     {
       hackathonId,
@@ -94,7 +133,7 @@ function seedChallenges(db: Database.Database, hackathonId: number) {
         { title: 'Docker Compose Docs', url: 'https://docs.docker.com/compose/', type: 'docs' },
       ]),
       maxPoints: 150,
-      unlockAt: '2026-03-17T09:00:00Z',
+      unlockAt: new Date('2026-03-17T09:00:00Z'),
     },
     {
       hackathonId,
@@ -112,7 +151,7 @@ function seedChallenges(db: Database.Database, hackathonId: number) {
         { title: 'WebSocket API (MDN)', url: 'https://developer.mozilla.org/en-US/docs/Web/API/WebSocket', type: 'docs' },
       ]),
       maxPoints: 150,
-      unlockAt: '2026-03-18T09:00:00Z',
+      unlockAt: new Date('2026-03-18T09:00:00Z'),
     },
     {
       hackathonId,
@@ -130,7 +169,7 @@ function seedChallenges(db: Database.Database, hackathonId: number) {
         { title: 'SQLite Injection Cheat Sheet', url: 'https://github.com/swisskyrepo/PayloadsAllTheThings/tree/master/SQL%20Injection/SQLite%20Injection', type: 'reference' },
       ]),
       maxPoints: 200,
-      unlockAt: '2026-03-19T09:00:00Z',
+      unlockAt: new Date('2026-03-19T09:00:00Z'),
     },
     {
       hackathonId,
@@ -148,248 +187,194 @@ function seedChallenges(db: Database.Database, hackathonId: number) {
         { title: 'Base62 Encoding', url: 'https://en.wikipedia.org/wiki/Base62', type: 'reference' },
       ]),
       maxPoints: 200,
-      unlockAt: '2026-03-20T09:00:00Z',
+      unlockAt: new Date('2026-03-20T09:00:00Z'),
     },
   ]
 
-  for (const c of challenges) {
-    insert.run(c)
-  }
+  await db.insert(challenges).values(challengeData)
 }
 
-function seedScheduleEvents(db: Database.Database, hackathonId: number) {
-  const count = (db.prepare('SELECT COUNT(*) as count FROM schedule_events WHERE hackathon_id = ?').get(hackathonId) as { count: number }).count
-  if (count > 0) return
+async function seedScheduleEvents(hackathonId: number) {
+  const db = getDb()
 
-  const insert = db.prepare(`
-    INSERT INTO schedule_events (hackathon_id, day_number, time, title, venue, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `)
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(scheduleEvents)
+    .where(eq(scheduleEvents.hackathonId, hackathonId))
+
+  if (Number(count) > 0) return
 
   const events = [
-    [1, '08:30', 'Registration & Check-in', 'Main Hall', 1],
-    [1, '09:00', 'Opening Keynote', 'Auditorium', 2],
-    [1, '09:30', 'Challenge 1 Unlocks — Data Pipeline', 'Challenge Board', 3],
-    [1, '12:00', 'Lunch Break', 'Courtyard', 4],
-    [1, '13:00', 'Workshop: Effective Debugging', 'Room A', 5],
-    [1, '17:00', 'Day 1 Submissions Due', 'Challenge Board', 6],
-    [2, '09:00', 'Challenge 2 Unlocks — API Gateway', 'Challenge Board', 1],
-    [2, '10:30', 'Workshop: API Design Patterns', 'Room B', 2],
-    [2, '12:00', 'Lunch Break', 'Courtyard', 3],
-    [2, '14:00', 'Mentor Office Hours', 'Room A', 4],
-    [2, '17:00', 'Day 2 Submissions Due', 'Challenge Board', 5],
-    [3, '09:00', 'Challenge 3 Unlocks — Real-time Dashboard', 'Challenge Board', 1],
-    [3, '10:30', 'Workshop: Data Visualization', 'Room B', 2],
-    [3, '12:00', 'Lunch Break', 'Courtyard', 3],
-    [3, '15:00', 'Team Check-ins', 'Main Hall', 4],
-    [3, '17:00', 'Day 3 Submissions Due', 'Challenge Board', 5],
-    [4, '09:00', 'Challenge 4 Unlocks — Security Audit', 'Challenge Board', 1],
-    [4, '10:00', 'Workshop: Common Vulnerability Patterns', 'Room A', 2],
-    [4, '12:00', 'Lunch Break', 'Courtyard', 3],
-    [4, '14:00', 'Lightning Talks', 'Auditorium', 4],
-    [4, '17:00', 'Day 4 Submissions Due', 'Challenge Board', 5],
-    [5, '09:00', 'Challenge 5 Unlocks — System Design', 'Challenge Board', 1],
-    [5, '11:00', 'Workshop: Load Testing & Profiling', 'Room B', 2],
-    [5, '12:00', 'Lunch Break', 'Courtyard', 3],
-    [5, '15:00', 'Final Submissions Due', 'Challenge Board', 4],
-    [5, '16:00', 'Judging & Deliberation', 'Main Hall', 5],
-    [5, '17:30', 'Awards Ceremony & Closing', 'Auditorium', 6],
+    { hackathonId, dayNumber: 1, time: '08:30', title: 'Registration & Check-in', venue: 'Main Hall', sortOrder: 1 },
+    { hackathonId, dayNumber: 1, time: '09:00', title: 'Opening Keynote', venue: 'Auditorium', sortOrder: 2 },
+    { hackathonId, dayNumber: 1, time: '09:30', title: 'Challenge 1 Unlocks — Data Pipeline', venue: 'Challenge Board', sortOrder: 3 },
+    { hackathonId, dayNumber: 1, time: '12:00', title: 'Lunch Break', venue: 'Courtyard', sortOrder: 4 },
+    { hackathonId, dayNumber: 1, time: '13:00', title: 'Workshop: Effective Debugging', venue: 'Room A', sortOrder: 5 },
+    { hackathonId, dayNumber: 1, time: '17:00', title: 'Day 1 Submissions Due', venue: 'Challenge Board', sortOrder: 6 },
+    { hackathonId, dayNumber: 2, time: '09:00', title: 'Challenge 2 Unlocks — API Gateway', venue: 'Challenge Board', sortOrder: 1 },
+    { hackathonId, dayNumber: 2, time: '10:30', title: 'Workshop: API Design Patterns', venue: 'Room B', sortOrder: 2 },
+    { hackathonId, dayNumber: 2, time: '12:00', title: 'Lunch Break', venue: 'Courtyard', sortOrder: 3 },
+    { hackathonId, dayNumber: 2, time: '14:00', title: 'Mentor Office Hours', venue: 'Room A', sortOrder: 4 },
+    { hackathonId, dayNumber: 2, time: '17:00', title: 'Day 2 Submissions Due', venue: 'Challenge Board', sortOrder: 5 },
+    { hackathonId, dayNumber: 3, time: '09:00', title: 'Challenge 3 Unlocks — Real-time Dashboard', venue: 'Challenge Board', sortOrder: 1 },
+    { hackathonId, dayNumber: 3, time: '10:30', title: 'Workshop: Data Visualization', venue: 'Room B', sortOrder: 2 },
+    { hackathonId, dayNumber: 3, time: '12:00', title: 'Lunch Break', venue: 'Courtyard', sortOrder: 3 },
+    { hackathonId, dayNumber: 3, time: '15:00', title: 'Team Check-ins', venue: 'Main Hall', sortOrder: 4 },
+    { hackathonId, dayNumber: 3, time: '17:00', title: 'Day 3 Submissions Due', venue: 'Challenge Board', sortOrder: 5 },
+    { hackathonId, dayNumber: 4, time: '09:00', title: 'Challenge 4 Unlocks — Security Audit', venue: 'Challenge Board', sortOrder: 1 },
+    { hackathonId, dayNumber: 4, time: '10:00', title: 'Workshop: Common Vulnerability Patterns', venue: 'Room A', sortOrder: 2 },
+    { hackathonId, dayNumber: 4, time: '12:00', title: 'Lunch Break', venue: 'Courtyard', sortOrder: 3 },
+    { hackathonId, dayNumber: 4, time: '14:00', title: 'Lightning Talks', venue: 'Auditorium', sortOrder: 4 },
+    { hackathonId, dayNumber: 4, time: '17:00', title: 'Day 4 Submissions Due', venue: 'Challenge Board', sortOrder: 5 },
+    { hackathonId, dayNumber: 5, time: '09:00', title: 'Challenge 5 Unlocks — System Design', venue: 'Challenge Board', sortOrder: 1 },
+    { hackathonId, dayNumber: 5, time: '11:00', title: 'Workshop: Load Testing & Profiling', venue: 'Room B', sortOrder: 2 },
+    { hackathonId, dayNumber: 5, time: '12:00', title: 'Lunch Break', venue: 'Courtyard', sortOrder: 3 },
+    { hackathonId, dayNumber: 5, time: '15:00', title: 'Final Submissions Due', venue: 'Challenge Board', sortOrder: 4 },
+    { hackathonId, dayNumber: 5, time: '16:00', title: 'Judging & Deliberation', venue: 'Main Hall', sortOrder: 5 },
+    { hackathonId, dayNumber: 5, time: '17:30', title: 'Awards Ceremony & Closing', venue: 'Auditorium', sortOrder: 6 },
   ]
 
-  for (const [day, time, title, venue, order] of events) {
-    insert.run(hackathonId, day, time, title, venue, order)
-  }
+  await db.insert(scheduleEvents).values(events)
 }
 
-function seedRules(db: Database.Database, hackathonId: number) {
-  const count = (db.prepare('SELECT COUNT(*) as count FROM rules WHERE hackathon_id = ?').get(hackathonId) as { count: number }).count
-  if (count > 0) return
+async function seedRules(hackathonId: number) {
+  const db = getDb()
 
-  const insert = db.prepare(`
-    INSERT INTO rules (hackathon_id, title, body, sort_order)
-    VALUES (?, ?, ?, ?)
-  `)
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(rules)
+    .where(eq(rules.hackathonId, hackathonId))
+
+  if (Number(count) > 0) return
 
   const rulesList = [
-    ['One account per participant', 'Each participant must register with a unique email address. Sharing accounts is not permitted and will result in disqualification.', 1],
-    ['Team size', 'Teams may have 1 to 4 members. You may participate solo. Team composition is locked after the first submission.', 2],
-    ['Submission format', 'Submit through the platform before each daily deadline. Include a description of your approach, any trade-offs, and links to your code repository.', 3],
-    ['Original work only', 'All code must be written during the hackathon. You may use open-source libraries and frameworks, but the core solution must be your own. AI assistants (Copilot, ChatGPT, etc.) are allowed as tools.', 4],
-    ['Scoring criteria', 'Each challenge specifies its own scoring breakdown. Common factors: correctness, performance, code quality, and documentation. Partial credit is awarded.', 5],
-    ['Daily deadlines', 'Challenges unlock at 09:00 and submissions close at 17:00 the same day. Late submissions are accepted with a 20% point penalty per hour.', 6],
-    ['Code of conduct', 'Be respectful, inclusive, and constructive. Harassment, plagiarism, or deliberate sabotage of other teams will result in immediate disqualification.', 7],
-    ['Disputes and judging', 'Judges\' decisions are final. If you believe there is a scoring error, submit a dispute through the platform within 1 hour of results being posted.', 8],
+    { hackathonId, title: 'One account per participant', body: 'Each participant must register with a unique email address. Sharing accounts is not permitted and will result in disqualification.', sortOrder: 1 },
+    { hackathonId, title: 'Team size', body: 'Teams may have 1 to 4 members. You may participate solo. Team composition is locked after the first submission.', sortOrder: 2 },
+    { hackathonId, title: 'Submission format', body: 'Submit through the platform before each daily deadline. Include a description of your approach, any trade-offs, and links to your code repository.', sortOrder: 3 },
+    { hackathonId, title: 'Original work only', body: 'All code must be written during the hackathon. You may use open-source libraries and frameworks, but the core solution must be your own. AI assistants (Copilot, ChatGPT, etc.) are allowed as tools.', sortOrder: 4 },
+    { hackathonId, title: 'Scoring criteria', body: 'Each challenge specifies its own scoring breakdown. Common factors: correctness, performance, code quality, and documentation. Partial credit is awarded.', sortOrder: 5 },
+    { hackathonId, title: 'Daily deadlines', body: 'Challenges unlock at 09:00 and submissions close at 17:00 the same day. Late submissions are accepted with a 20% point penalty per hour.', sortOrder: 6 },
+    { hackathonId, title: 'Code of conduct', body: 'Be respectful, inclusive, and constructive. Harassment, plagiarism, or deliberate sabotage of other teams will result in immediate disqualification.', sortOrder: 7 },
+    { hackathonId, title: 'Disputes and judging', body: 'Judges\' decisions are final. If you believe there is a scoring error, submit a dispute through the platform within 1 hour of results being posted.', sortOrder: 8 },
   ]
 
-  for (const [title, body, order] of rulesList) {
-    insert.run(hackathonId, title, body, order)
-  }
+  await db.insert(rules).values(rulesList)
 }
 
-function seedSkillModules(db: Database.Database, hackathonId: number) {
-  const count = (db.prepare('SELECT COUNT(*) as count FROM skill_modules WHERE hackathon_id = ?').get(hackathonId) as { count: number }).count
-  if (count > 0) return
+async function seedSkillModules(hackathonId: number) {
+  const db = getDb()
 
-  const insert = db.prepare(`
-    INSERT INTO skill_modules (id, hackathon_id, title, description, sort_order)
-    VALUES (?, ?, ?, ?, ?)
-  `)
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(skillModules)
+    .where(eq(skillModules.hackathonId, hackathonId))
+
+  if (Number(count) > 0) return
 
   const modules = [
-    ['api-design', 'API Design', 'RESTful API design principles, versioning, error handling, and documentation with OpenAPI.', 1],
-    ['data-modeling', 'Data Modeling', 'Relational and document database schema design, normalization, indexing strategies, and query optimization.', 2],
-    ['testing', 'Testing Strategies', 'Unit testing, integration testing, load testing, and test-driven development workflows.', 3],
-    ['security-fundamentals', 'Security Fundamentals', 'Authentication patterns, input validation, OWASP Top 10, and secure coding practices.', 4],
-    ['system-design', 'System Design', 'Scalability patterns, caching strategies, load balancing, and distributed system trade-offs.', 5],
+    { id: 'api-design', hackathonId, title: 'API Design', description: 'RESTful API design principles, versioning, error handling, and documentation with OpenAPI.', sortOrder: 1 },
+    { id: 'data-modeling', hackathonId, title: 'Data Modeling', description: 'Relational and document database schema design, normalization, indexing strategies, and query optimization.', sortOrder: 2 },
+    { id: 'testing', hackathonId, title: 'Testing Strategies', description: 'Unit testing, integration testing, load testing, and test-driven development workflows.', sortOrder: 3 },
+    { id: 'security-fundamentals', hackathonId, title: 'Security Fundamentals', description: 'Authentication patterns, input validation, OWASP Top 10, and secure coding practices.', sortOrder: 4 },
+    { id: 'system-design', hackathonId, title: 'System Design', description: 'Scalability patterns, caching strategies, load balancing, and distributed system trade-offs.', sortOrder: 5 },
   ]
 
-  for (const [id, title, description, order] of modules) {
-    insert.run(id, hackathonId, title, description, order)
-  }
+  await db.insert(skillModules).values(modules)
 }
 
-function seedTeams(db: Database.Database, hackathonId: number, usersByEmail: Map<string, number>) {
-  const count = (db.prepare('SELECT COUNT(*) as count FROM teams WHERE hackathon_id = ?').get(hackathonId) as { count: number }).count
-  if (count > 0) return
+async function seedTeams(hackathonId: number, usersByEmail: Map<string, string>) {
+  const db = getDb()
 
-  const insertTeam = db.prepare(`
-    INSERT INTO teams (hackathon_id, name, created_by)
-    VALUES (?, ?, ?)
-  `)
-  const insertMember = db.prepare(`
-    INSERT INTO team_members (team_id, user_id, role)
-    VALUES (?, ?, ?)
-  `)
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(teams)
+    .where(eq(teams.hackathonId, hackathonId))
+
+  if (Number(count) > 0) return
 
   const teamDefs = [
     { name: 'Nova Forge', leader: 'ari@ahp.rw', members: ['noah@ahp.rw'] },
     { name: 'Green Pulse', leader: 'lena@ahp.rw', members: ['mina@ahp.rw'] },
-    { name: 'Signal 9', leader: 'sam@ahp.rw', members: [] },
+    { name: 'Signal 9', leader: 'sam@ahp.rw', members: [] as string[] },
   ]
 
   for (const def of teamDefs) {
     const leaderId = usersByEmail.get(def.leader)
     if (!leaderId) continue
 
-    const info = insertTeam.run(hackathonId, def.name, leaderId)
-    const teamId = Number(info.lastInsertRowid)
-    insertMember.run(teamId, leaderId, 'leader')
+    const [{ id: teamId }] = await db
+      .insert(teams)
+      .values({ hackathonId, name: def.name, createdBy: leaderId })
+      .returning({ id: teams.id })
+
+    await db.insert(teamMembers).values({ teamId, userId: leaderId, role: 'leader' })
 
     for (const memberEmail of def.members) {
       const memberId = usersByEmail.get(memberEmail)
       if (memberId) {
-        insertMember.run(teamId, memberId, 'member')
+        await db.insert(teamMembers).values({ teamId, userId: memberId, role: 'member' })
       }
     }
   }
 }
 
-function seedSubmissions(db: Database.Database, hackathonId: number, usersByEmail: Map<string, number>) {
-  const challenges = db.prepare('SELECT id, day_number FROM challenges WHERE hackathon_id = ?').all(hackathonId) as Array<{ id: number; day_number: number }>
-  const challengeByDay = new Map(challenges.map((c) => [c.day_number, c.id]))
+async function seedSubmissions(hackathonId: number, usersByEmail: Map<string, string>) {
+  const db = getDb()
 
-  const teams = db.prepare('SELECT id, name FROM teams WHERE hackathon_id = ?').all(hackathonId) as Array<{ id: number; name: string }>
-  const teamByName = new Map(teams.map((t) => [t.name, t.id]))
+  const challengeRows = await db
+    .select({ id: challenges.id, dayNumber: challenges.dayNumber })
+    .from(challenges)
+    .where(eq(challenges.hackathonId, hackathonId))
+  const challengeByDay = new Map(challengeRows.map((c) => [c.dayNumber, c.id]))
 
-  const countByLocalId = db.prepare('SELECT COUNT(*) as count FROM submissions WHERE local_id = ?')
-  const insertSubmission = db.prepare(`
-    INSERT INTO submissions
-      (user_id, local_id, team_id, team_name, challenge_id, project_title, description, category, status, score, version, created_at, updated_at)
-    VALUES
-      (@userId, @localId, @teamId, @teamName, @challengeId, @projectTitle, @description, @category, @status, @score, @version, datetime('now', @daysAgo), datetime('now'))
-  `)
+  const teamRows = await db
+    .select({ id: teams.id, name: teams.name })
+    .from(teams)
+    .where(eq(teams.hackathonId, hackathonId))
+  const teamByName = new Map(teamRows.map((t) => [t.name, t.id]))
 
   const submissionTemplates = [
     {
-      email: 'ari@ahp.rw',
-      localId: 'seed-local-1',
-      teamName: 'Nova Forge',
-      day: 1,
+      email: 'ari@ahp.rw', localId: 'seed-local-1', teamName: 'Nova Forge', day: 1,
       title: 'Stream-based CSV/JSON normalizer',
       description: 'Node.js streaming pipeline using Transform streams. Handles 15K records/sec with dedup via composite hash map. Skips malformed rows with structured error logging.',
-      category: 'Algorithm',
-      status: 'reviewed',
-      score: 88,
-      version: 2,
-      daysAgo: '-4 day',
+      category: 'Algorithm', status: 'reviewed', score: 88, version: 2,
     },
     {
-      email: 'lena@ahp.rw',
-      localId: 'seed-local-2',
-      teamName: 'Green Pulse',
-      day: 2,
+      email: 'lena@ahp.rw', localId: 'seed-local-2', teamName: 'Green Pulse', day: 2,
       title: 'Express gateway with sliding window limiter',
       description: 'Lightweight Express-based gateway with in-memory sliding window rate limiter and circuit breaker. Routes requests to three backends with <5ms overhead.',
-      category: 'Optimization',
-      status: 'reviewed',
-      score: 92,
-      version: 3,
-      daysAgo: '-3 day',
+      category: 'Optimization', status: 'reviewed', score: 92, version: 3,
     },
     {
-      email: 'sam@ahp.rw',
-      localId: 'seed-local-3',
-      teamName: 'Signal 9',
-      day: 1,
+      email: 'sam@ahp.rw', localId: 'seed-local-3', teamName: 'Signal 9', day: 1,
       title: 'Parallel CSV parser with worker threads',
       description: 'Multi-threaded CSV parser using Node.js worker_threads. Splits input into chunks and processes in parallel. Achieves 22K records/sec on test data.',
-      category: 'Algorithm',
-      status: 'reviewed',
-      score: 78,
-      version: 1,
-      daysAgo: '-4 day',
+      category: 'Algorithm', status: 'reviewed', score: 78, version: 1,
     },
     {
-      email: 'ari@ahp.rw',
-      localId: 'seed-local-4',
-      teamName: 'Nova Forge',
-      day: 2,
+      email: 'ari@ahp.rw', localId: 'seed-local-4', teamName: 'Nova Forge', day: 2,
       title: 'Go reverse proxy with circuit breaker',
       description: 'Go-based reverse proxy using goroutines for concurrent request handling. Implements token bucket rate limiting and exponential backoff circuit breaker.',
-      category: 'Systems',
-      status: 'reviewed',
-      score: 85,
-      version: 1,
-      daysAgo: '-3 day',
+      category: 'Systems', status: 'reviewed', score: 85, version: 1,
     },
     {
-      email: 'lena@ahp.rw',
-      localId: 'seed-local-5',
-      teamName: 'Green Pulse',
-      day: 1,
+      email: 'lena@ahp.rw', localId: 'seed-local-5', teamName: 'Green Pulse', day: 1,
       title: 'Python pandas pipeline with validation',
       description: 'Pandas-based pipeline with schema validation using pydantic. Processes 12K records/sec with detailed error reports and duplicate detection.',
-      category: 'Algorithm',
-      status: 'reviewed',
-      score: 72,
-      version: 1,
-      daysAgo: '-4 day',
+      category: 'Algorithm', status: 'reviewed', score: 72, version: 1,
     },
     {
-      email: 'noah@ahp.rw',
-      localId: 'seed-local-6',
-      teamName: 'Nova Forge',
-      day: 3,
+      email: 'noah@ahp.rw', localId: 'seed-local-6', teamName: 'Nova Forge', day: 3,
       title: 'Canvas-based real-time sensor dashboard',
       description: 'Pure Canvas dashboard with requestAnimationFrame loop. Renders line charts, bar charts, and alert log at 60fps. Uses ring buffer for time-series data.',
-      category: 'Visualization',
-      status: 'submitted',
-      score: null,
-      version: 1,
-      daysAgo: '-2 day',
+      category: 'Visualization', status: 'submitted', score: null, version: 1,
     },
     {
-      email: 'mina@ahp.rw',
-      localId: 'seed-local-7',
-      teamName: 'Green Pulse',
-      day: 3,
+      email: 'mina@ahp.rw', localId: 'seed-local-7', teamName: 'Green Pulse', day: 3,
       title: 'D3.js dashboard with WebSocket reconnect',
       description: 'D3.js-powered dashboard with automatic WebSocket reconnection and data replay. SVG charts with smooth transitions and threshold-based alerting.',
-      category: 'Visualization',
-      status: 'submitted',
-      score: null,
-      version: 1,
-      daysAgo: '-2 day',
+      category: 'Visualization', status: 'submitted', score: null, version: 1,
     },
   ]
 
@@ -397,10 +382,14 @@ function seedSubmissions(db: Database.Database, hackathonId: number, usersByEmai
     const userId = usersByEmail.get(item.email)
     if (!userId) continue
 
-    const existing = countByLocalId.get(item.localId) as { count: number }
-    if (existing.count > 0) continue
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(submissions)
+      .where(eq(submissions.localId, item.localId))
 
-    insertSubmission.run({
+    if (Number(count) > 0) continue
+
+    await db.insert(submissions).values({
       userId,
       localId: item.localId,
       teamId: teamByName.get(item.teamName) ?? null,
@@ -412,22 +401,13 @@ function seedSubmissions(db: Database.Database, hackathonId: number, usersByEmai
       status: item.status,
       score: item.score,
       version: item.version,
-      daysAgo: item.daysAgo,
     })
   }
 }
 
-function seedSkillProgress(db: Database.Database, seededUsers: Array<{ id: number; email: string }>) {
+async function seedSkillProgress(usersByEmail: Map<string, string>) {
+  const db = getDb()
   const modules = ['api-design', 'data-modeling', 'testing', 'security-fundamentals', 'system-design']
-  const insertProgress = db.prepare(`
-    INSERT INTO skill_progress (user_id, module_id, status, completed_at, version, updated_at)
-    VALUES (?, ?, ?, ?, ?, datetime('now'))
-    ON CONFLICT(user_id, module_id) DO UPDATE SET
-      status = excluded.status,
-      completed_at = excluded.completed_at,
-      version = excluded.version,
-      updated_at = excluded.updated_at
-  `)
 
   const progressMap: Record<string, Record<string, 'completed' | 'in_progress'>> = {
     'ari@ahp.rw': { 'api-design': 'completed', 'data-modeling': 'completed', 'testing': 'in_progress', 'security-fundamentals': 'in_progress', 'system-design': 'in_progress' },
@@ -437,59 +417,102 @@ function seedSkillProgress(db: Database.Database, seededUsers: Array<{ id: numbe
     'mina@ahp.rw': { 'api-design': 'completed', 'data-modeling': 'completed', 'testing': 'in_progress', 'security-fundamentals': 'completed', 'system-design': 'in_progress' },
   }
 
-  for (const user of seededUsers) {
-    if (user.email === 'admin@ahp.rw') continue
-    const userProgress = progressMap[user.email]
-    if (!userProgress) continue
+  for (const [email, userProgress] of Object.entries(progressMap)) {
+    const userId = usersByEmail.get(email)
+    if (!userId) continue
 
     for (const moduleId of modules) {
       const status = userProgress[moduleId] ?? 'in_progress'
-      const completedAt = status === 'completed' ? new Date().toISOString() : null
+      const completedAt = status === 'completed' ? new Date() : null
       const version = status === 'completed' ? 2 : 1
-      insertProgress.run(user.id, moduleId, status, completedAt, version)
+
+      await db
+        .insert(skillProgress)
+        .values({ userId, moduleId, status, completedAt, version })
+        .onConflictDoNothing()
     }
   }
 }
 
-function seedSyncLog(db: Database.Database, usersByEmail: Map<string, number>) {
-  const logCount = (db.prepare('SELECT COUNT(*) as count FROM sync_log').get() as { count: number }).count
-  if (logCount > 0) return
+async function seedSyncLog(usersByEmail: Map<string, string>) {
+  const db = getDb()
 
-  const insertSyncLog = db.prepare(`
-    INSERT INTO sync_log (user_id, action, entity_type, entity_id, status)
-    VALUES (?, ?, ?, ?, ?)
-  `)
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(syncLog)
 
-  insertSyncLog.run(usersByEmail.get('ari@ahp.rw') ?? null, 'submission', 'submission', 'seed-local-1', 'success')
-  insertSyncLog.run(usersByEmail.get('lena@ahp.rw') ?? null, 'submission', 'submission', 'seed-local-2', 'success')
-  insertSyncLog.run(usersByEmail.get('sam@ahp.rw') ?? null, 'submission', 'submission', 'seed-local-3', 'success')
-  insertSyncLog.run(usersByEmail.get('ari@ahp.rw') ?? null, 'submission', 'submission', 'seed-local-4', 'success')
-  insertSyncLog.run(usersByEmail.get('lena@ahp.rw') ?? null, 'submission', 'submission', 'seed-local-5', 'success')
-  insertSyncLog.run(usersByEmail.get('noah@ahp.rw') ?? null, 'submission', 'submission', 'seed-local-6', 'success')
-  insertSyncLog.run(usersByEmail.get('mina@ahp.rw') ?? null, 'submission', 'submission', 'seed-local-7', 'success')
+  if (Number(count) > 0) return
+
+  const entries = [
+    { email: 'ari@ahp.rw', entityId: 'seed-local-1' },
+    { email: 'lena@ahp.rw', entityId: 'seed-local-2' },
+    { email: 'sam@ahp.rw', entityId: 'seed-local-3' },
+    { email: 'ari@ahp.rw', entityId: 'seed-local-4' },
+    { email: 'lena@ahp.rw', entityId: 'seed-local-5' },
+    { email: 'noah@ahp.rw', entityId: 'seed-local-6' },
+    { email: 'mina@ahp.rw', entityId: 'seed-local-7' },
+  ]
+
+  for (const entry of entries) {
+    const userId = usersByEmail.get(entry.email) ?? null
+    await db.insert(syncLog).values({
+      userId,
+      action: 'submission',
+      entityType: 'submission',
+      entityId: entry.entityId,
+      status: 'success',
+    })
+  }
 }
 
-export function ensureSeedData(db: Database.Database) {
-  const env = process.env.NODE_ENV
-  if (env === 'test' || env === 'production') {
-    return
+async function main() {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('[seed] Refusing to seed in production')
+    process.exit(1)
   }
 
-  seedUsersTable(db)
+  console.log('[seed] Starting...')
 
-  const hackathonId = seedHackathon(db)
+  const usersByEmail = await seedUserProfiles()
+  console.log(`[seed] User profiles: ${usersByEmail.size} resolved`)
 
-  const seededUsers = db
-    .prepare('SELECT id, email FROM users WHERE email LIKE ?')
-    .all('%@ahp.rw') as Array<{ id: number; email: string }>
-  const usersByEmail = new Map(seededUsers.map((user) => [user.email, user.id]))
+  const hackathonId = await seedHackathon()
+  console.log(`[seed] Hackathon id: ${hackathonId}`)
 
-  seedChallenges(db, hackathonId)
-  seedScheduleEvents(db, hackathonId)
-  seedRules(db, hackathonId)
-  seedSkillModules(db, hackathonId)
-  seedTeams(db, hackathonId, usersByEmail)
-  seedSubmissions(db, hackathonId, usersByEmail)
-  seedSkillProgress(db, seededUsers)
-  seedSyncLog(db, usersByEmail)
+  await seedChallenges(hackathonId)
+  console.log('[seed] Challenges seeded')
+
+  await seedScheduleEvents(hackathonId)
+  console.log('[seed] Schedule events seeded')
+
+  await seedRules(hackathonId)
+  console.log('[seed] Rules seeded')
+
+  await seedSkillModules(hackathonId)
+  console.log('[seed] Skill modules seeded')
+
+  if (usersByEmail.size > 0) {
+    await seedTeams(hackathonId, usersByEmail)
+    console.log('[seed] Teams seeded')
+
+    await seedSubmissions(hackathonId, usersByEmail)
+    console.log('[seed] Submissions seeded')
+
+    await seedSkillProgress(usersByEmail)
+    console.log('[seed] Skill progress seeded')
+
+    await seedSyncLog(usersByEmail)
+    console.log('[seed] Sync log seeded')
+  } else {
+    console.log('[seed] No auth users found — skipping user-dependent data (teams, submissions, etc.)')
+    console.log('[seed] Create users via the signup flow, then re-run this script')
+  }
+
+  console.log('[seed] Done')
+  process.exit(0)
 }
+
+main().catch((err) => {
+  console.error('[seed] Fatal error:', err)
+  process.exit(1)
+})
