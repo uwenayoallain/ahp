@@ -36,6 +36,17 @@ const seedUsers: SeedUser[] = [
   { id: '00000000-0000-0000-0000-000000000006', name: 'Mina R', email: 'mina@ahp.rw', role: 'participant' },
 ]
 
+const activeHackathonStartDate = new Date('2026-03-29T08:30:00Z')
+const activeHackathonEndDate = new Date('2026-04-02T18:00:00Z')
+
+function eventDate(dayNumber: number, time: string) {
+  const value = new Date(activeHackathonStartDate)
+  value.setUTCDate(activeHackathonStartDate.getUTCDate() + dayNumber - 1)
+  const [hours, minutes] = time.split(':').map((part) => Number(part))
+  value.setUTCHours(hours ?? 0, minutes ?? 0, 0, 0)
+  return value
+}
+
 async function seedUserProfiles() {
   const db = getDb()
 
@@ -71,17 +82,38 @@ async function seedHackathon(): Promise<number> {
     .from(hackathons)
     .where(eq(hackathons.slug, 'aegis-2026'))
 
-  if (existing) return existing.id
+  if (existing) {
+    await db
+      .update(hackathons)
+      .set({
+        name: 'Aegis Hackathon 2026',
+        description: 'Five days of online engineering challenges, reviews, and live sessions. Build, optimize, and ship real solutions under time pressure.',
+        startDate: activeHackathonStartDate,
+        endDate: activeHackathonEndDate,
+        isActive: true,
+        teamSizeMin: 1,
+        teamSizeMax: 4,
+        latePolicy: 'accept_with_penalty',
+        latePenaltyPercentPerHour: 20,
+      })
+      .where(eq(hackathons.id, existing.id))
+
+    return existing.id
+  }
 
   const [row] = await db
     .insert(hackathons)
     .values({
       name: 'Aegis Hackathon 2026',
       slug: 'aegis-2026',
-      description: 'Five days of engineering challenges. Build, optimize, and ship real solutions under time pressure. Solo or team — every submission counts toward the leaderboard.',
-      startDate: new Date('2026-03-16T00:00:00Z'),
-      endDate: new Date('2026-03-20T00:00:00Z'),
+      description: 'Five days of online engineering challenges, reviews, and live sessions. Build, optimize, and ship real solutions under time pressure.',
+      startDate: activeHackathonStartDate,
+      endDate: activeHackathonEndDate,
       isActive: true,
+      teamSizeMin: 1,
+      teamSizeMax: 4,
+      latePolicy: 'accept_with_penalty',
+      latePenaltyPercentPerHour: 20,
     })
     .returning({ id: hackathons.id })
 
@@ -90,13 +122,6 @@ async function seedHackathon(): Promise<number> {
 
 async function seedChallenges(hackathonId: number) {
   const db = getDb()
-
-  const [{ count }] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(challenges)
-    .where(eq(challenges.hackathonId, hackathonId))
-
-  if (Number(count) > 0) return
 
   const challengeData = [
     {
@@ -115,7 +140,8 @@ async function seedChallenges(hackathonId: number) {
         { title: 'JSON Schema Spec', url: 'https://json-schema.org/understanding-json-schema/', type: 'reference' },
       ]),
       maxPoints: 100,
-      unlockAt: new Date('2026-03-16T09:00:00Z'),
+      unlockAt: eventDate(1, '09:00'),
+      submissionDeadlineAt: eventDate(1, '17:00'),
     },
     {
       hackathonId,
@@ -133,7 +159,8 @@ async function seedChallenges(hackathonId: number) {
         { title: 'Docker Compose Docs', url: 'https://docs.docker.com/compose/', type: 'docs' },
       ]),
       maxPoints: 150,
-      unlockAt: new Date('2026-03-17T09:00:00Z'),
+      unlockAt: eventDate(2, '09:00'),
+      submissionDeadlineAt: eventDate(2, '17:00'),
     },
     {
       hackathonId,
@@ -151,7 +178,8 @@ async function seedChallenges(hackathonId: number) {
         { title: 'WebSocket API (MDN)', url: 'https://developer.mozilla.org/en-US/docs/Web/API/WebSocket', type: 'docs' },
       ]),
       maxPoints: 150,
-      unlockAt: new Date('2026-03-18T09:00:00Z'),
+      unlockAt: eventDate(3, '09:00'),
+      submissionDeadlineAt: eventDate(3, '17:00'),
     },
     {
       hackathonId,
@@ -169,7 +197,8 @@ async function seedChallenges(hackathonId: number) {
         { title: 'SQLite Injection Cheat Sheet', url: 'https://github.com/swisskyrepo/PayloadsAllTheThings/tree/master/SQL%20Injection/SQLite%20Injection', type: 'reference' },
       ]),
       maxPoints: 200,
-      unlockAt: new Date('2026-03-19T09:00:00Z'),
+      unlockAt: eventDate(4, '09:00'),
+      submissionDeadlineAt: eventDate(4, '17:00'),
     },
     {
       hackathonId,
@@ -187,65 +216,72 @@ async function seedChallenges(hackathonId: number) {
         { title: 'Base62 Encoding', url: 'https://en.wikipedia.org/wiki/Base62', type: 'reference' },
       ]),
       maxPoints: 200,
-      unlockAt: new Date('2026-03-20T09:00:00Z'),
+      unlockAt: eventDate(5, '09:00'),
+      submissionDeadlineAt: eventDate(5, '17:00'),
     },
   ]
 
-  await db.insert(challenges).values(challengeData)
+  for (const challenge of challengeData) {
+    await db
+      .insert(challenges)
+      .values(challenge)
+      .onConflictDoUpdate({
+        target: [challenges.hackathonId, challenges.dayNumber],
+        set: {
+          title: challenge.title,
+          slug: challenge.slug,
+          difficulty: challenge.difficulty,
+          summary: challenge.summary,
+          description: challenge.description,
+          setupInstructions: challenge.setupInstructions,
+          resources: challenge.resources,
+          maxPoints: challenge.maxPoints,
+          unlockAt: challenge.unlockAt,
+          submissionDeadlineAt: challenge.submissionDeadlineAt,
+        },
+      })
+  }
 }
 
 async function seedScheduleEvents(hackathonId: number) {
   const db = getDb()
 
-  const [{ count }] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(scheduleEvents)
-    .where(eq(scheduleEvents.hackathonId, hackathonId))
-
-  if (Number(count) > 0) return
-
   const events = [
-    { hackathonId, dayNumber: 1, time: '08:30', title: 'Registration & Check-in', venue: 'Main Hall', sortOrder: 1 },
-    { hackathonId, dayNumber: 1, time: '09:00', title: 'Opening Keynote', venue: 'Auditorium', sortOrder: 2 },
-    { hackathonId, dayNumber: 1, time: '09:30', title: 'Challenge 1 Unlocks — Data Pipeline', venue: 'Challenge Board', sortOrder: 3 },
-    { hackathonId, dayNumber: 1, time: '12:00', title: 'Lunch Break', venue: 'Courtyard', sortOrder: 4 },
-    { hackathonId, dayNumber: 1, time: '13:00', title: 'Workshop: Effective Debugging', venue: 'Room A', sortOrder: 5 },
-    { hackathonId, dayNumber: 1, time: '17:00', title: 'Day 1 Submissions Due', venue: 'Challenge Board', sortOrder: 6 },
-    { hackathonId, dayNumber: 2, time: '09:00', title: 'Challenge 2 Unlocks — API Gateway', venue: 'Challenge Board', sortOrder: 1 },
-    { hackathonId, dayNumber: 2, time: '10:30', title: 'Workshop: API Design Patterns', venue: 'Room B', sortOrder: 2 },
-    { hackathonId, dayNumber: 2, time: '12:00', title: 'Lunch Break', venue: 'Courtyard', sortOrder: 3 },
-    { hackathonId, dayNumber: 2, time: '14:00', title: 'Mentor Office Hours', venue: 'Room A', sortOrder: 4 },
-    { hackathonId, dayNumber: 2, time: '17:00', title: 'Day 2 Submissions Due', venue: 'Challenge Board', sortOrder: 5 },
-    { hackathonId, dayNumber: 3, time: '09:00', title: 'Challenge 3 Unlocks — Real-time Dashboard', venue: 'Challenge Board', sortOrder: 1 },
-    { hackathonId, dayNumber: 3, time: '10:30', title: 'Workshop: Data Visualization', venue: 'Room B', sortOrder: 2 },
-    { hackathonId, dayNumber: 3, time: '12:00', title: 'Lunch Break', venue: 'Courtyard', sortOrder: 3 },
-    { hackathonId, dayNumber: 3, time: '15:00', title: 'Team Check-ins', venue: 'Main Hall', sortOrder: 4 },
-    { hackathonId, dayNumber: 3, time: '17:00', title: 'Day 3 Submissions Due', venue: 'Challenge Board', sortOrder: 5 },
-    { hackathonId, dayNumber: 4, time: '09:00', title: 'Challenge 4 Unlocks — Security Audit', venue: 'Challenge Board', sortOrder: 1 },
-    { hackathonId, dayNumber: 4, time: '10:00', title: 'Workshop: Common Vulnerability Patterns', venue: 'Room A', sortOrder: 2 },
-    { hackathonId, dayNumber: 4, time: '12:00', title: 'Lunch Break', venue: 'Courtyard', sortOrder: 3 },
-    { hackathonId, dayNumber: 4, time: '14:00', title: 'Lightning Talks', venue: 'Auditorium', sortOrder: 4 },
-    { hackathonId, dayNumber: 4, time: '17:00', title: 'Day 4 Submissions Due', venue: 'Challenge Board', sortOrder: 5 },
-    { hackathonId, dayNumber: 5, time: '09:00', title: 'Challenge 5 Unlocks — System Design', venue: 'Challenge Board', sortOrder: 1 },
-    { hackathonId, dayNumber: 5, time: '11:00', title: 'Workshop: Load Testing & Profiling', venue: 'Room B', sortOrder: 2 },
-    { hackathonId, dayNumber: 5, time: '12:00', title: 'Lunch Break', venue: 'Courtyard', sortOrder: 3 },
-    { hackathonId, dayNumber: 5, time: '15:00', title: 'Final Submissions Due', venue: 'Challenge Board', sortOrder: 4 },
-    { hackathonId, dayNumber: 5, time: '16:00', title: 'Judging & Deliberation', venue: 'Main Hall', sortOrder: 5 },
-    { hackathonId, dayNumber: 5, time: '17:30', title: 'Awards Ceremony & Closing', venue: 'Auditorium', sortOrder: 6 },
+    { hackathonId, dayNumber: 1, time: '08:30', title: 'Platform access opens', venue: 'Participant dashboard', sortOrder: 1 },
+    { hackathonId, dayNumber: 1, time: '09:00', title: 'Opening livestream', venue: 'Main livestream', sortOrder: 2 },
+    { hackathonId, dayNumber: 1, time: '09:30', title: 'Challenge 1 unlocks — Data Pipeline', venue: 'Challenge board', sortOrder: 3 },
+    { hackathonId, dayNumber: 1, time: '12:00', title: 'Community networking thread', venue: 'Community chat', sortOrder: 4 },
+    { hackathonId, dayNumber: 1, time: '13:00', title: 'Workshop: Effective Debugging', venue: 'Workshop livestream', sortOrder: 5 },
+    { hackathonId, dayNumber: 1, time: '17:00', title: 'Day 1 submissions due', venue: 'Submission portal', sortOrder: 6 },
+    { hackathonId, dayNumber: 2, time: '09:00', title: 'Challenge 2 unlocks — API Gateway', venue: 'Challenge board', sortOrder: 1 },
+    { hackathonId, dayNumber: 2, time: '10:30', title: 'Workshop: API Design Patterns', venue: 'Workshop livestream', sortOrder: 2 },
+    { hackathonId, dayNumber: 2, time: '12:30', title: 'Mentor Q&A', venue: 'Mentor channel', sortOrder: 3 },
+    { hackathonId, dayNumber: 2, time: '14:00', title: 'Async office hours', venue: 'Help desk', sortOrder: 4 },
+    { hackathonId, dayNumber: 2, time: '17:00', title: 'Day 2 submissions due', venue: 'Submission portal', sortOrder: 5 },
+    { hackathonId, dayNumber: 3, time: '09:00', title: 'Challenge 3 unlocks — Real-time Dashboard', venue: 'Challenge board', sortOrder: 1 },
+    { hackathonId, dayNumber: 3, time: '10:30', title: 'Workshop: Data Visualization', venue: 'Workshop livestream', sortOrder: 2 },
+    { hackathonId, dayNumber: 3, time: '13:00', title: 'Midweek team check-in', venue: 'Community chat', sortOrder: 3 },
+    { hackathonId, dayNumber: 3, time: '15:00', title: 'Mentor pairing window', venue: 'Help desk', sortOrder: 4 },
+    { hackathonId, dayNumber: 3, time: '17:00', title: 'Day 3 submissions due', venue: 'Submission portal', sortOrder: 5 },
+    { hackathonId, dayNumber: 4, time: '09:00', title: 'Challenge 4 unlocks — Security Audit', venue: 'Challenge board', sortOrder: 1 },
+    { hackathonId, dayNumber: 4, time: '10:00', title: 'Workshop: Common Vulnerability Patterns', venue: 'Workshop livestream', sortOrder: 2 },
+    { hackathonId, dayNumber: 4, time: '13:00', title: 'Lightning demos', venue: 'Community livestream', sortOrder: 3 },
+    { hackathonId, dayNumber: 4, time: '15:00', title: 'Security review clinic', venue: 'Mentor channel', sortOrder: 4 },
+    { hackathonId, dayNumber: 4, time: '17:00', title: 'Day 4 submissions due', venue: 'Submission portal', sortOrder: 5 },
+    { hackathonId, dayNumber: 5, time: '09:00', title: 'Challenge 5 unlocks — System Design', venue: 'Challenge board', sortOrder: 1 },
+    { hackathonId, dayNumber: 5, time: '11:00', title: 'Workshop: Load Testing & Profiling', venue: 'Workshop livestream', sortOrder: 2 },
+    { hackathonId, dayNumber: 5, time: '13:00', title: 'Final mentor clinic', venue: 'Help desk', sortOrder: 3 },
+    { hackathonId, dayNumber: 5, time: '15:00', title: 'Final submissions due', venue: 'Submission portal', sortOrder: 4 },
+    { hackathonId, dayNumber: 5, time: '16:00', title: 'Judging and deliberation', venue: 'Judge workspace', sortOrder: 5 },
+    { hackathonId, dayNumber: 5, time: '17:30', title: 'Results livestream', venue: 'Main livestream', sortOrder: 6 },
   ]
 
+  await db.delete(scheduleEvents).where(eq(scheduleEvents.hackathonId, hackathonId))
   await db.insert(scheduleEvents).values(events)
 }
 
 async function seedRules(hackathonId: number) {
   const db = getDb()
-
-  const [{ count }] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(rules)
-    .where(eq(rules.hackathonId, hackathonId))
-
-  if (Number(count) > 0) return
 
   const rulesList = [
     { hackathonId, title: 'One account per participant', body: 'Each participant must register with a unique email address. Sharing accounts is not permitted and will result in disqualification.', sortOrder: 1 },
@@ -254,22 +290,17 @@ async function seedRules(hackathonId: number) {
     { hackathonId, title: 'Original work only', body: 'All code must be written during the hackathon. You may use open-source libraries and frameworks, but the core solution must be your own. AI assistants (Copilot, ChatGPT, etc.) are allowed as tools.', sortOrder: 4 },
     { hackathonId, title: 'Scoring criteria', body: 'Each challenge specifies its own scoring breakdown. Common factors: correctness, performance, code quality, and documentation. Partial credit is awarded.', sortOrder: 5 },
     { hackathonId, title: 'Daily deadlines', body: 'Challenges unlock at 09:00 and submissions close at 17:00 the same day. Late submissions are accepted with a 20% point penalty per hour.', sortOrder: 6 },
-    { hackathonId, title: 'Code of conduct', body: 'Be respectful, inclusive, and constructive. Harassment, plagiarism, or deliberate sabotage of other teams will result in immediate disqualification.', sortOrder: 7 },
-    { hackathonId, title: 'Disputes and judging', body: 'Judges\' decisions are final. If you believe there is a scoring error, submit a dispute through the platform within 1 hour of results being posted.', sortOrder: 8 },
+    { hackathonId, title: 'Online event channels', body: 'All official sessions, announcements, mentoring, and support happen online through the platform and linked channels. Participants are responsible for monitoring those channels during the event window.', sortOrder: 7 },
+    { hackathonId, title: 'Code of conduct', body: 'Be respectful, inclusive, and constructive. Harassment, plagiarism, or deliberate sabotage of other teams will result in immediate disqualification.', sortOrder: 8 },
+    { hackathonId, title: 'Disputes and judging', body: 'Judges\' decisions are final. If you believe there is a scoring error, submit a dispute through the platform within 1 hour of results being posted.', sortOrder: 9 },
   ]
 
+  await db.delete(rules).where(eq(rules.hackathonId, hackathonId))
   await db.insert(rules).values(rulesList)
 }
 
 async function seedSkillModules(hackathonId: number) {
   const db = getDb()
-
-  const [{ count }] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(skillModules)
-    .where(eq(skillModules.hackathonId, hackathonId))
-
-  if (Number(count) > 0) return
 
   const modules = [
     { id: 'api-design', hackathonId, title: 'API Design', description: 'RESTful API design principles, versioning, error handling, and documentation with OpenAPI.', sortOrder: 1 },
@@ -279,7 +310,19 @@ async function seedSkillModules(hackathonId: number) {
     { id: 'system-design', hackathonId, title: 'System Design', description: 'Scalability patterns, caching strategies, load balancing, and distributed system trade-offs.', sortOrder: 5 },
   ]
 
-  await db.insert(skillModules).values(modules)
+  for (const module of modules) {
+    await db
+      .insert(skillModules)
+      .values(module)
+      .onConflictDoUpdate({
+        target: [skillModules.id, skillModules.hackathonId],
+        set: {
+          title: module.title,
+          description: module.description,
+          sortOrder: module.sortOrder,
+        },
+      })
+  }
 }
 
 async function seedTeams(hackathonId: number, usersByEmail: Map<string, string>) {
@@ -307,7 +350,7 @@ async function seedTeams(hackathonId: number, usersByEmail: Map<string, string>)
       .values({ hackathonId, name: def.name, createdBy: leaderId })
       .returning({ id: teams.id })
 
-    await db.insert(teamMembers).values({ teamId, userId: leaderId, role: 'leader' })
+    await db.insert(teamMembers).values({ teamId, userId: leaderId, role: 'lead' })
 
     for (const memberEmail of def.members) {
       const memberId = usersByEmail.get(memberEmail)

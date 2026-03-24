@@ -325,4 +325,74 @@ describe('submission sync', () => {
     expect(res.status).toBe(400)
     expect(res.body.error).toMatch(/unlock/i)
   })
+
+  test('sync stores a late penalty when the active hackathon accepts late submissions', async () => {
+    const participantUserId = testUserId('late-user')
+    await seedUser(participantUserId, 'Late User')
+    const hackathonId = await seedHackathon({
+      latePolicy: 'accept_with_penalty',
+      latePenaltyPercentPerHour: 15,
+    })
+    const challengeId = await seedChallenge(hackathonId, 1, 'Late Challenge', {
+      unlockAt: new Date('2020-01-01T09:00:00Z'),
+      submissionDeadlineAt: new Date('2020-01-01T10:00:00Z'),
+    })
+
+    const res = await request(app)
+      .post('/api/sync')
+      .set(authHeaders(participantUserId))
+      .send({
+        action: 'submission',
+        payload: {
+          localId: 'draft-late',
+          challengeId,
+          projectTitle: 'Late but valid',
+          description: 'Submitted after the deadline',
+          category: 'Security',
+          version: 1,
+        },
+      })
+
+    expect(res.status).toBe(200)
+
+    const db = getDb()
+    const [row] = await db
+      .select({
+        penaltyPercent: submissions.penaltyPercent,
+      })
+      .from(submissions)
+      .where(eq(submissions.localId, 'draft-late'))
+
+    expect(row.penaltyPercent).toBeGreaterThan(0)
+  })
+
+  test('sync rejects late submissions when the active hackathon late policy is reject', async () => {
+    const participantUserId = testUserId('reject-late-user')
+    await seedUser(participantUserId, 'Reject Late User')
+    const hackathonId = await seedHackathon({
+      latePolicy: 'reject',
+    })
+    const challengeId = await seedChallenge(hackathonId, 1, 'Closed Challenge', {
+      unlockAt: new Date('2020-01-01T09:00:00Z'),
+      submissionDeadlineAt: new Date('2020-01-01T10:00:00Z'),
+    })
+
+    const res = await request(app)
+      .post('/api/sync')
+      .set(authHeaders(participantUserId))
+      .send({
+        action: 'submission',
+        payload: {
+          localId: 'draft-rejected-late',
+          challengeId,
+          projectTitle: 'Too late',
+          description: 'Should be rejected',
+          category: 'Security',
+          version: 1,
+        },
+      })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/deadline/i)
+  })
 })
