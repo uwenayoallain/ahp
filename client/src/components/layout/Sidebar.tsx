@@ -35,6 +35,7 @@ export function Sidebar() {
 
       {userRole === 'admin' && (
         <nav className="nav-links" aria-label="Admin">
+          <p className="nav-section-label">Admin</p>
           {adminNav.map((item) => (
             <LinkRow key={item.to} to={item.to} label={item.label} />
           ))}

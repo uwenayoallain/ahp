@@ -19,6 +19,7 @@ import { SubmissionDetailPage } from './pages/SubmissionDetail'
 import { SubmitProjectPage } from './pages/SubmitProject'
 import { TeamsPage } from './pages/Teams'
 import { AdminDashboardPage } from './pages/admin/Dashboard'
+import { AdminHackathonsPage } from './pages/admin/Hackathons'
 import { AdminProgressPage } from './pages/admin/Progress'
 import { AdminSubmissionDetailPage } from './pages/admin/SubmissionDetail'
 import { AdminSubmissionsPage } from './pages/admin/Submissions'
@@ -106,6 +107,7 @@ const router = createBrowserRouter([
         ),
         children: [
           { path: 'dashboard', element: <AdminDashboardPage /> },
+          { path: 'hackathons', element: <AdminHackathonsPage /> },
           { path: 'submissions', element: <AdminSubmissionsPage /> },
           { path: 'submissions/:id', element: <AdminSubmissionDetailPage /> },
           { path: 'progress', element: <AdminProgressPage /> },

@@ -11,6 +11,7 @@ export const participantNav = [
 
 export const adminNav = [
   { to: '/app/admin/dashboard', label: 'Overview', short: 'Dash' },
+  { to: '/app/admin/hackathons', label: 'Hackathons', short: 'Event' },
   { to: '/app/admin/submissions', label: 'Submissions', short: 'Queue' },
   { to: '/app/admin/progress', label: 'Progress', short: 'Prog' },
 ]
