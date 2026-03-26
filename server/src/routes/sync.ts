@@ -17,7 +17,7 @@ syncRouter.use(requireAuth)
 
 const SAFE_ID_PATTERN = /^[a-zA-Z0-9_-]+$/
 
-syncRouter.post('/', (req, res) => {
+syncRouter.post('/', async (req, res) => {
   const userId = req.user?.sub
   if (userId === undefined) {
     return res.status(401).json({ error: 'Unauthorized' })
@@ -48,21 +48,24 @@ syncRouter.post('/', (req, res) => {
     }
   }
 
-  const result = processSync(userId, { action: action as 'submission' | 'skillProgress', payload })
+  const result = await processSync(userId, { action: action as 'submission' | 'skillProgress', payload })
   if (result.status === 'conflict') {
     return res.status(409).json(result)
+  }
+  if (result.status === 'rejected') {
+    return res.status(400).json({ error: result.error })
   }
 
   return res.json(result)
 })
 
-syncRouter.get('/status', (req, res) => {
+syncRouter.get('/status', async (req, res) => {
   const userId = req.user?.sub
   if (userId === undefined) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
-  return res.json(getSyncStatus(userId))
+  return res.json(await getSyncStatus(userId))
 })
 
 syncRouter.post('/media', upload.single('chunk'), (req, res) => {

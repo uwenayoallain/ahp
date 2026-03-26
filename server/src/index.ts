@@ -1,6 +1,5 @@
 import cors from 'cors'
 import express from 'express'
-import { getDb } from './db/connection.js'
 import { adminRouter } from './routes/admin.js'
 import { authRouter } from './routes/auth.js'
 import { challengesRouter } from './routes/challenges.js'
@@ -16,8 +15,6 @@ import { teamsRouter } from './routes/teams.js'
 
 export function createApp() {
   const app = express()
-
-  getDb()
 
   const allowedOrigins = process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())

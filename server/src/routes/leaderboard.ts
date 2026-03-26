@@ -1,38 +1,45 @@
+import { sql, eq } from 'drizzle-orm'
 import { Router } from 'express'
 import { getActiveHackathon } from '../activeHackathon.js'
 import { getDb } from '../db/connection.js'
+import { teams, teamMembers, submissions } from '../db/schema.js'
 import { parsePagination } from '../pagination.js'
 
 export const leaderboardRouter = Router()
 
-leaderboardRouter.get('/', (req, res) => {
+leaderboardRouter.get('/', async (req, res) => {
   const { page, limit, offset } = parsePagination(req)
-  const db = getDb()
-  const hackathon = getActiveHackathon()
+  const hackathon = await getActiveHackathon()
 
   if (!hackathon) {
     return res.json({ items: [], total: 0, page, limit })
   }
 
-  const total = (db
-    .prepare('SELECT COUNT(*) AS count FROM teams WHERE hackathon_id = ?')
-    .get(hackathon.id) as { count: number }).count
+  const db = getDb()
 
-  const teams = db
-    .prepare(
-      `SELECT t.id, t.name,
-              COUNT(DISTINCT tm.user_id) AS member_count,
-              COALESCE(SUM(s.score), 0) AS total_score,
-              COUNT(DISTINCT s.id) AS submission_count
-       FROM teams t
-       LEFT JOIN team_members tm ON tm.team_id = t.id
-       LEFT JOIN submissions s ON s.team_id = t.id AND s.score IS NOT NULL
-       WHERE t.hackathon_id = ?
-       GROUP BY t.id
-       ORDER BY total_score DESC, submission_count DESC
-       LIMIT ? OFFSET ?`,
-    )
-    .all(hackathon.id, limit, offset)
+  const [totalRow] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(teams)
+    .where(eq(teams.hackathonId, hackathon.id))
 
-  return res.json({ items: teams, total, page, limit })
+  const total = totalRow?.count ?? 0
+
+  const items = await db
+    .select({
+      id: teams.id,
+      name: teams.name,
+      member_count: sql<number>`count(distinct ${teamMembers.userId})`,
+      total_score: sql<number>`coalesce(sum(${submissions.score}), 0)`,
+      submission_count: sql<number>`count(distinct ${submissions.id})`,
+    })
+    .from(teams)
+    .leftJoin(teamMembers, eq(teamMembers.teamId, teams.id))
+    .leftJoin(submissions, sql`${submissions.teamId} = ${teams.id} and ${submissions.score} is not null`)
+    .where(eq(teams.hackathonId, hackathon.id))
+    .groupBy(teams.id)
+    .orderBy(sql`coalesce(sum(${submissions.score}), 0) desc`, sql`count(distinct ${submissions.id}) desc`)
+    .limit(limit)
+    .offset(offset)
+
+  return res.json({ items, total, page, limit })
 })

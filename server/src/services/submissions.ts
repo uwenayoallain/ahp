@@ -1,72 +1,124 @@
+import { eq } from 'drizzle-orm'
 import { getDb } from '../db/connection.js'
+import { submissions, challenges, neonAuthUsersSync } from '../db/schema.js'
 
 type SubmissionInput = {
-  userId: number
-  localId?: string
-  teamId?: number
+  userId: string
+  localId?: string | null
+  teamId?: number | null
   teamName: string
   challengeId?: number
   projectTitle: string
   description: string
   category: string
   version?: number
+  penaltyPercent?: number
 }
 
-export function createSubmission(input: SubmissionInput) {
+export async function createSubmission(input: SubmissionInput): Promise<number> {
   const db = getDb()
-  const stmt = db.prepare(`
-    INSERT INTO submissions (user_id, local_id, team_id, team_name, challenge_id, project_title, description, category, version, updated_at)
-    VALUES (@userId, @localId, @teamId, @teamName, @challengeId, @projectTitle, @description, @category, @version, datetime('now'))
-  `)
+  const [row] = await db
+    .insert(submissions)
+    .values({
+      userId: input.userId,
+      localId: input.localId ?? null,
+      teamId: input.teamId ?? null,
+      teamName: input.teamName,
+      challengeId: input.challengeId ?? null,
+      projectTitle: input.projectTitle,
+      description: input.description,
+      category: input.category,
+      penaltyPercent: input.penaltyPercent ?? 0,
+      version: input.version ?? 1,
+      updatedAt: new Date(),
+    })
+    .returning({ id: submissions.id })
 
-  const info = stmt.run({
-    userId: input.userId,
-    localId: input.localId ?? null,
-    teamId: input.teamId ?? null,
-    teamName: input.teamName,
-    challengeId: input.challengeId ?? null,
-    projectTitle: input.projectTitle,
-    description: input.description,
-    category: input.category,
-    version: input.version ?? 1,
-  })
-
-  return Number(info.lastInsertRowid)
+  return row.id
 }
 
-export function getSubmissionById(id: number) {
+export async function getSubmissionById(id: number) {
   const db = getDb()
-  return db
-    .prepare(
-      `SELECT s.id, s.user_id, s.local_id, s.team_id, s.team_name, s.challenge_id, s.project_title,
-              s.description, s.category, s.status, s.score, s.version, s.created_at, s.updated_at,
-              c.title AS challenge_title, c.day_number
-       FROM submissions s
-       LEFT JOIN challenges c ON c.id = s.challenge_id
-       WHERE s.id = ?`,
-    )
-    .get(id)
+  const [row] = await db
+    .select({
+      id: submissions.id,
+      user_id: submissions.userId,
+      local_id: submissions.localId,
+      team_id: submissions.teamId,
+      team_name: submissions.teamName,
+      challenge_id: submissions.challengeId,
+      project_title: submissions.projectTitle,
+      description: submissions.description,
+      category: submissions.category,
+      status: submissions.status,
+      score: submissions.score,
+      raw_score: submissions.rawScore,
+      penalty_percent: submissions.penaltyPercent,
+      version: submissions.version,
+      created_at: submissions.createdAt,
+      updated_at: submissions.updatedAt,
+      challenge_title: challenges.title,
+      day_number: challenges.dayNumber,
+    })
+    .from(submissions)
+    .leftJoin(challenges, eq(challenges.id, submissions.challengeId))
+    .where(eq(submissions.id, id))
+    .limit(1)
+
+  return row
 }
 
-export function getAdminSubmissionById(id: number) {
+export async function getAdminSubmissionById(id: number) {
   const db = getDb()
-  return db
-    .prepare(
-      `SELECT s.id, s.user_id, s.local_id, s.team_id, s.team_name, s.challenge_id, s.project_title,
-              s.description, s.category, s.status, s.score, s.version, s.created_at, s.updated_at,
-              c.title AS challenge_title, c.day_number,
-              u.name AS user_name
-       FROM submissions s
-       LEFT JOIN challenges c ON c.id = s.challenge_id
-       LEFT JOIN users u ON u.id = s.user_id
-       WHERE s.id = ?`,
-    )
-    .get(id)
+  const [row] = await db
+    .select({
+      id: submissions.id,
+      user_id: submissions.userId,
+      local_id: submissions.localId,
+      team_id: submissions.teamId,
+      team_name: submissions.teamName,
+      challenge_id: submissions.challengeId,
+      project_title: submissions.projectTitle,
+      description: submissions.description,
+      category: submissions.category,
+      status: submissions.status,
+      score: submissions.score,
+      raw_score: submissions.rawScore,
+      penalty_percent: submissions.penaltyPercent,
+      version: submissions.version,
+      created_at: submissions.createdAt,
+      updated_at: submissions.updatedAt,
+      challenge_title: challenges.title,
+      day_number: challenges.dayNumber,
+      user_name: neonAuthUsersSync.name,
+    })
+    .from(submissions)
+    .leftJoin(challenges, eq(challenges.id, submissions.challengeId))
+    .leftJoin(neonAuthUsersSync, eq(neonAuthUsersSync.id, submissions.userId))
+    .where(eq(submissions.id, id))
+    .limit(1)
+
+  return row
 }
 
-export function scoreSubmission(id: number, score: number, status: string) {
+export async function scoreSubmission(id: number, score: number, status: string) {
   const db = getDb()
-  db.prepare(
-    `UPDATE submissions SET score = ?, status = ?, updated_at = datetime('now') WHERE id = ?`,
-  ).run(score, status, id)
+  const [existing] = await db
+    .select({ penaltyPercent: submissions.penaltyPercent })
+    .from(submissions)
+    .where(eq(submissions.id, id))
+    .limit(1)
+
+  const penaltyPercent = existing?.penaltyPercent ?? 0
+  const finalScore = Math.max(0, Math.round(score * (1 - penaltyPercent / 100)))
+
+  await db
+    .update(submissions)
+    .set({
+      rawScore: score,
+      score: finalScore,
+      status,
+      updatedAt: new Date(),
+    })
+    .where(eq(submissions.id, id))
 }

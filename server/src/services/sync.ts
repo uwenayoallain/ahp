@@ -1,10 +1,10 @@
+import { and, eq, sql } from 'drizzle-orm'
 import { getDb } from '../db/connection.js'
-import { createSubmission, getSubmissionById } from './submissions.js'
+import { challenges, hackathons, submissions, syncLog, teamMembers, teams } from '../db/schema.js'
+import { getSubmissionById } from './submissions.js'
 
 type SyncSubmissionPayload = {
   localId: string
-  teamId?: number
-  teamName: string
   challengeId?: number
   projectTitle: string
   description: string
@@ -17,110 +17,178 @@ type SyncRequest = {
   payload: unknown
 }
 
-type SyncResult =
+export type SyncResult =
   | { status: 'ignored' }
   | { status: 'created'; id: number }
   | { status: 'updated'; id: number }
   | { status: 'conflict'; serverCopy: unknown }
+  | { status: 'rejected'; error: string }
 
-export function processSync(userId: number, body: SyncRequest): SyncResult {
+export async function processSync(userId: string, body: SyncRequest): Promise<SyncResult> {
   if (body.action !== 'submission') {
-    logSync(userId, body.action, 'unknown', 'ignored')
+    await logSync(userId, body.action, 'unknown', 'ignored')
     return { status: 'ignored' }
   }
 
   const payload = body.payload as SyncSubmissionPayload
   const db = getDb()
 
-  const syncTransaction = db.transaction((): SyncResult => {
-    const existing = db
-      .prepare(
-        'SELECT id, version FROM submissions WHERE user_id = ? AND local_id = ?',
-      )
-      .get(userId, payload.localId) as { id: number; version: number } | undefined
+  const [activeHackathon] = await db
+    .select({
+      id: hackathons.id,
+      latePolicy: hackathons.latePolicy,
+      latePenaltyPercentPerHour: hackathons.latePenaltyPercentPerHour,
+    })
+    .from(hackathons)
+    .where(eq(hackathons.isActive, true))
+    .limit(1)
+
+  if (!activeHackathon) {
+    await logSync(userId, 'submission', payload.localId, 'rejected')
+    return { status: 'rejected', error: 'No active hackathon' }
+  }
+
+  if (payload.challengeId === undefined) {
+    await logSync(userId, 'submission', payload.localId, 'rejected')
+    return { status: 'rejected', error: 'payload.challengeId is required' }
+  }
+
+  const [challenge] = await db
+    .select({
+      id: challenges.id,
+      unlockAt: challenges.unlockAt,
+      submissionDeadlineAt: challenges.submissionDeadlineAt,
+    })
+    .from(challenges)
+    .where(and(eq(challenges.id, payload.challengeId), eq(challenges.hackathonId, activeHackathon.id)))
+    .limit(1)
+
+  if (!challenge) {
+    await logSync(userId, 'submission', payload.localId, 'rejected')
+    return { status: 'rejected', error: 'Challenge is not available in the active hackathon' }
+  }
+
+  const now = new Date()
+
+  if (challenge.unlockAt && now < challenge.unlockAt) {
+    await logSync(userId, 'submission', payload.localId, 'rejected')
+    return { status: 'rejected', error: 'Challenge is not unlocked yet' }
+  }
+
+  let penaltyPercent = 0
+  if (challenge.submissionDeadlineAt && now > challenge.submissionDeadlineAt) {
+    if (activeHackathon.latePolicy === 'reject') {
+      await logSync(userId, 'submission', payload.localId, 'rejected')
+      return { status: 'rejected', error: 'Submission deadline has passed' }
+    }
+
+    const hoursLate = Math.ceil(
+      (now.getTime() - challenge.submissionDeadlineAt.getTime()) / (60 * 60 * 1000),
+    )
+    penaltyPercent = Math.max(0, hoursLate * activeHackathon.latePenaltyPercentPerHour)
+  }
+
+  const [membership] = await db
+    .select({
+      teamId: teamMembers.teamId,
+      teamName: teams.name,
+    })
+    .from(teamMembers)
+    .innerJoin(teams, eq(teams.id, teamMembers.teamId))
+    .where(and(eq(teams.hackathonId, activeHackathon.id), eq(teamMembers.userId, userId)))
+    .limit(1)
+
+  const result = await db.transaction(async (tx): Promise<SyncResult> => {
+    const [existing] = await tx
+      .select({ id: submissions.id, version: submissions.version })
+      .from(submissions)
+      .where(and(eq(submissions.userId, userId), eq(submissions.localId, payload.localId)))
+      .limit(1)
 
     if (!existing) {
-      const createdId = createSubmission({
-        userId,
-        localId: payload.localId,
-        teamId: payload.teamId,
-        teamName: payload.teamName,
-        challengeId: payload.challengeId,
-        projectTitle: payload.projectTitle,
-        description: payload.description,
-        category: payload.category,
-        version: payload.version,
-      })
+      const [created] = await tx
+        .insert(submissions)
+        .values({
+          userId,
+          localId: payload.localId,
+          teamId: membership?.teamId ?? null,
+          teamName: membership?.teamName ?? '',
+          challengeId: challenge.id,
+          projectTitle: payload.projectTitle,
+          description: payload.description,
+          category: payload.category,
+          penaltyPercent,
+          version: payload.version,
+          updatedAt: now,
+        })
+        .returning({ id: submissions.id })
 
-      logSync(userId, 'submission', String(createdId), 'success')
-      return { status: 'created', id: createdId }
+      return { status: 'created', id: created.id }
     }
 
     if (payload.version < existing.version) {
-      const serverCopy = getSubmissionById(existing.id)
-      logSync(userId, 'submission', String(existing.id), 'conflict')
+      const serverCopy = await getSubmissionById(existing.id)
       return { status: 'conflict', serverCopy }
     }
 
-    db.prepare(
-      `
-        UPDATE submissions
-        SET team_id = @teamId,
-            team_name = @teamName,
-            challenge_id = @challengeId,
-            project_title = @projectTitle,
-            description = @description,
-            category = @category,
-            version = @version,
-            updated_at = datetime('now')
-        WHERE id = @id
-      `,
-    ).run({
-      id: existing.id,
-      teamId: payload.teamId ?? null,
-      teamName: payload.teamName,
-      challengeId: payload.challengeId ?? null,
-      projectTitle: payload.projectTitle,
-      description: payload.description,
-      category: payload.category,
-      version: payload.version,
-    })
+    await tx
+      .update(submissions)
+      .set({
+        teamId: membership?.teamId ?? null,
+        teamName: membership?.teamName ?? '',
+        challengeId: challenge.id,
+        projectTitle: payload.projectTitle,
+        description: payload.description,
+        category: payload.category,
+        penaltyPercent,
+        version: payload.version,
+        updatedAt: now,
+      })
+      .where(eq(submissions.id, existing.id))
 
-    logSync(userId, 'submission', String(existing.id), 'updated')
     return { status: 'updated', id: existing.id }
   })
 
-  return syncTransaction()
+  if (result.status === 'created') {
+    await logSync(userId, 'submission', String(result.id), 'success')
+  } else if (result.status === 'updated') {
+    await logSync(userId, 'submission', String(result.id), 'updated')
+  } else if (result.status === 'conflict') {
+    const entityId = typeof result.serverCopy === 'object' && result.serverCopy !== null && 'id' in result.serverCopy
+      ? String((result.serverCopy as { id: number }).id)
+      : payload.localId
+    await logSync(userId, 'submission', entityId, 'conflict')
+  }
+
+  return result
 }
 
-export function getSyncStatus(userId: number) {
+export async function getSyncStatus(userId: string) {
   const db = getDb()
 
-  const submissionCount = (db
-    .prepare('SELECT COUNT(*) AS count FROM submissions WHERE user_id = ?')
-    .get(userId) as { count: number }).count
+  const [submissionCount] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(submissions)
+    .where(eq(submissions.userId, userId))
 
-  const queueHealth = db
-    .prepare(
-      `SELECT status, COUNT(*) AS count
-       FROM sync_log
-       WHERE user_id = ?
-       GROUP BY status`,
-    )
-    .all(userId)
+  const queueHealth = await db
+    .select({
+      status: syncLog.status,
+      count: sql<number>`count(*)`,
+    })
+    .from(syncLog)
+    .where(eq(syncLog.userId, userId))
+    .groupBy(syncLog.status)
 
   return {
-    submissions: submissionCount,
+    submissions: submissionCount?.count ?? 0,
     queueHealth,
   }
 }
 
-function logSync(userId: number, action: string, entityId: string, status: string) {
+async function logSync(userId: string, action: string, entityId: string, status: string) {
   const db = getDb()
-  db.prepare(
-    `
-      INSERT INTO sync_log (user_id, action, entity_type, entity_id, status)
-      VALUES (?, ?, 'submission', ?, ?)
-    `,
-  ).run(userId, action, entityId, status)
+  await db
+    .insert(syncLog)
+    .values({ userId, action, entityType: 'submission', entityId, status })
 }

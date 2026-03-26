@@ -1,5 +1,7 @@
+import { desc, eq, sql } from 'drizzle-orm'
 import { Router } from 'express'
 import { getDb } from '../db/connection.js'
+import { submissions, challenges } from '../db/schema.js'
 import { requireAuth } from '../middleware/auth.js'
 import { parsePagination } from '../pagination.js'
 import { getSubmissionById } from '../services/submissions.js'
@@ -8,15 +10,16 @@ export const submissionsRouter = Router()
 
 submissionsRouter.use(requireAuth)
 
-submissionsRouter.get('/categories', (_req, res) => {
+submissionsRouter.get('/categories', async (_req, res) => {
   const db = getDb()
-  const rows = db
-    .prepare('SELECT DISTINCT category FROM submissions ORDER BY category')
-    .all() as { category: string }[]
-  return res.json({ items: rows.map((r) => r.category) })
+  const rows = await db
+    .selectDistinct({ category: submissions.category })
+    .from(submissions)
+    .orderBy(submissions.category)
+  return res.json({ items: rows.map((row) => row.category) })
 })
 
-submissionsRouter.get('/', (req, res) => {
+submissionsRouter.get('/', async (req, res) => {
   const userId = req.user?.sub
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized' })
@@ -25,35 +28,48 @@ submissionsRouter.get('/', (req, res) => {
   const { page, limit, offset } = parsePagination(req)
   const db = getDb()
 
-  const total = (db
-    .prepare('SELECT COUNT(*) AS count FROM submissions WHERE user_id = ?')
-    .get(userId) as { count: number }).count
+  const [totalRow] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(submissions)
+    .where(eq(submissions.userId, userId))
 
-  const items = db
-    .prepare(
-      `SELECT s.id, s.local_id, s.team_id, s.team_name, s.challenge_id, s.project_title,
-              s.description, s.category, s.status, s.score, s.version, s.created_at, s.updated_at,
-              c.title AS challenge_title, c.day_number
-       FROM submissions s
-       LEFT JOIN challenges c ON c.id = s.challenge_id
-       WHERE s.user_id = ?
-       ORDER BY s.updated_at DESC
-       LIMIT ? OFFSET ?`,
-    )
-    .all(userId, limit, offset)
+  const total = totalRow?.count ?? 0
+
+  const items = await db
+    .select({
+      id: submissions.id,
+      local_id: submissions.localId,
+      team_id: submissions.teamId,
+      team_name: submissions.teamName,
+      challenge_id: submissions.challengeId,
+      project_title: submissions.projectTitle,
+      description: submissions.description,
+      category: submissions.category,
+      status: submissions.status,
+      score: submissions.score,
+      version: submissions.version,
+      created_at: submissions.createdAt,
+      updated_at: submissions.updatedAt,
+      challenge_title: challenges.title,
+      day_number: challenges.dayNumber,
+    })
+    .from(submissions)
+    .leftJoin(challenges, eq(challenges.id, submissions.challengeId))
+    .where(eq(submissions.userId, userId))
+    .orderBy(desc(submissions.updatedAt))
+    .limit(limit)
+    .offset(offset)
 
   return res.json({ items, total, page, limit })
 })
 
-submissionsRouter.get('/:id', (req, res) => {
+submissionsRouter.get('/:id', async (req, res) => {
   const submissionId = Number(req.params.id)
   if (Number.isNaN(submissionId)) {
     return res.status(400).json({ error: 'Invalid id' })
   }
 
-  const submission = getSubmissionById(submissionId) as
-    | { id: number; user_id: number; [key: string]: unknown }
-    | undefined
+  const submission = await getSubmissionById(submissionId)
 
   if (!submission) {
     return res.status(404).json({ error: 'Not found' })
