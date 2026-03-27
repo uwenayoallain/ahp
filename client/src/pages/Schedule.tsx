@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { EmptyState } from '../components/ui/EmptyState'
 import { PageHeader } from '../components/ui/PageHeader'
 import { apiRequest } from '../lib/api'
 import { formatDateTime } from '../lib/format'
@@ -103,7 +104,7 @@ export function SchedulePage() {
   if (loading) {
     return (
       <>
-        <PageHeader title="Challenges" subtitle="Daily challenge schedule, workshops, and submission deadlines." />
+        <PageHeader title="Challenges" subtitle="Daily challenge timeline, online sessions, and submission deadlines." />
         <p className="status-text">Loading...</p>
       </>
     )
@@ -112,7 +113,7 @@ export function SchedulePage() {
   if (error) {
     return (
       <>
-        <PageHeader title="Challenges" subtitle="Daily challenge schedule, workshops, and submission deadlines." />
+        <PageHeader title="Challenges" subtitle="Daily challenge timeline, online sessions, and submission deadlines." />
         <p className="status-text status-text--error">{error}</p>
       </>
     )
@@ -122,48 +123,68 @@ export function SchedulePage() {
     <>
       <PageHeader
         title="Challenges"
-        subtitle="Daily challenge schedule, workshops, and submission deadlines."
+        subtitle="Daily challenge timeline, online sessions, and submission deadlines."
       />
 
-      <div className="actions">
-        {days.map((day) => (
-          <button
-            key={day}
-            className={`btn ${selectedDay === day ? 'primary' : 'secondary'}`}
-            type="button"
-            onClick={() => setSelectedDay(day)}
-          >
-            Day {day}
-          </button>
-        ))}
-      </div>
-
-      {days.length === 0 && <p className="status-text">No challenge days are configured for the active hackathon yet.</p>}
-
-      {dayChallenge && (
-        <Link to={`/app/challenges/${dayChallenge.slug}`} className="card">
-          <div className="badge-row">
-            <span className="badge">{dayChallenge.difficulty}</span>
-            <span className="badge badge--success">{dayChallenge.max_points} pts</span>
-            <span className={challengeState(dayChallenge).className}>{challengeState(dayChallenge).label}</span>
+      {days.length === 0 ? (
+        <EmptyState
+          title="No challenge days configured"
+          message="The active hackathon does not have a published challenge calendar yet."
+          detail="Once challenges and schedule slots are configured, this page will show the current day, availability windows, and online sessions."
+        />
+      ) : (
+        <>
+          <div className="actions">
+            {days.map((day) => (
+              <button
+                key={day}
+                className={`btn ${selectedDay === day ? 'primary' : 'secondary'}`}
+                type="button"
+                onClick={() => setSelectedDay(day)}
+              >
+                Day {day}
+              </button>
+            ))}
           </div>
-          <h3>{dayChallenge.title}</h3>
-          <p>{dayChallenge.summary}</p>
-          <p>{challengeState(dayChallenge).detail}</p>
-        </Link>
-      )}
 
-      <section className="timeline">
-        {dayEvents.map((slot) => (
-          <article className="card timeline-item" key={slot.id}>
-            <p className="timeline-time">{slot.time}</p>
-            <div>
-              <h3>{slot.title}</h3>
-              <p>{slot.venue}</p>
-            </div>
-          </article>
-        ))}
-      </section>
+          {dayChallenge ? (
+            <Link to={`/app/challenges/${dayChallenge.slug}`} className="card">
+              <div className="badge-row">
+                <span className="badge">{dayChallenge.difficulty}</span>
+                <span className="badge badge--success">{dayChallenge.max_points} pts</span>
+                <span className={challengeState(dayChallenge).className}>{challengeState(dayChallenge).label}</span>
+              </div>
+              <h3>{dayChallenge.title}</h3>
+              <p>{dayChallenge.summary}</p>
+              <p>{challengeState(dayChallenge).detail}</p>
+            </Link>
+          ) : (
+            <EmptyState
+              title={`Day ${selectedDay} has no challenge brief`}
+              message="This day is on the schedule, but a challenge has not been published yet."
+            />
+          )}
+
+          {dayEvents.length > 0 ? (
+            <section className="timeline">
+              {dayEvents.map((slot) => (
+                <article className="card timeline-item" key={slot.id}>
+                  <p className="timeline-time">{slot.time}</p>
+                  <div>
+                    <h3>{slot.title}</h3>
+                    {slot.venue && <p>Channel: {slot.venue}</p>}
+                  </div>
+                </article>
+              ))}
+            </section>
+          ) : (
+            <EmptyState
+              title={`Day ${selectedDay} has no published sessions`}
+              message="No online events or checkpoints have been added for this day yet."
+            />
+          )}
+        </>
+      )}
     </>
   )
 }

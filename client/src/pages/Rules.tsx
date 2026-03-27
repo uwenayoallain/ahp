@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { EmptyState } from '../components/ui/EmptyState'
 import { PageHeader } from '../components/ui/PageHeader'
 import { apiRequest } from '../lib/api'
 
@@ -59,16 +60,24 @@ export function RulesPage() {
         subtitle="Participation guidelines, submission requirements, and fair play policy."
       />
 
-      <section className="timeline">
-        {rules.map((rule) => (
-          <details className="card" key={rule.id} open>
-            <summary>
-              <strong>{rule.title}</strong>
-            </summary>
-            <p>{rule.body}</p>
-          </details>
-        ))}
-      </section>
+      {rules.length === 0 ? (
+        <EmptyState
+          title="No rules published"
+          message="The active hackathon does not have participant rules yet."
+          detail="Admins can add fair play guidance, submission requirements, and delivery rules from the Hackathons area."
+        />
+      ) : (
+        <section className="timeline">
+          {rules.map((rule) => (
+            <details className="card" key={rule.id} open>
+              <summary>
+                <strong>{rule.title}</strong>
+              </summary>
+              <p>{rule.body}</p>
+            </details>
+          ))}
+        </section>
+      )}
     </>
   )
 }

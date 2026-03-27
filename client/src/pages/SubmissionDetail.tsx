@@ -85,7 +85,7 @@ export function SubmissionDetailPage() {
       <section className="detail-grid">
         <article className="card">
           <h3>Description</h3>
-          <p>{submission.description}</p>
+          <p className="text-prewrap">{submission.description}</p>
         </article>
 
         <article className="card">

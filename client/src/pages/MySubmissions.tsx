@@ -100,7 +100,16 @@ export function MySubmissionsPage() {
       {error && <p className="feedback feedback--error">{error}</p>}
 
       {!loading && !error && submissions.length === 0 && (
-        <EmptyState message="No submissions yet. Head to the Submit page to enter your first solution." />
+        <EmptyState
+          title="No submissions yet"
+          message="You have not submitted a challenge solution yet."
+          detail="Use the Submit page once your team has an open challenge and the required delivery links are ready."
+          action={(
+            <Link className="btn secondary" to="/app/submit">
+              Open Submit
+            </Link>
+          )}
+        />
       )}
 
       {!loading && submissions.length > 0 && (

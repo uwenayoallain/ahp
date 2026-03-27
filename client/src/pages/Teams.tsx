@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { EmptyState } from '../components/ui/EmptyState'
 import { PageHeader } from '../components/ui/PageHeader'
 import { useAuth } from '../hooks/useAuth'
 import { apiRequest } from '../lib/api'
@@ -400,58 +401,66 @@ export function TeamsPage() {
 
       <section className="panel-surface table-panel">
         <h3>All Teams</h3>
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Members</th>
-                <th>Status</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {teams.map((team) => {
-                const isFull = team.member_count >= team.capacity
-                const isMyTeam = myTeam?.id === team.id
-                const hasPendingRequest = pendingRequestTeamIds.has(team.id)
-                const disabled = working || isMyTeam || myTeam !== null || hasPendingRequest || isFull || team.is_locked
+        {teams.length === 0 ? (
+          <EmptyState
+            title="No teams yet"
+            message="No participant teams have been created for the active hackathon."
+            detail="Create the first team to start inviting members and preparing submissions."
+          />
+        ) : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Members</th>
+                  <th>Status</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {teams.map((team) => {
+                  const isFull = team.member_count >= team.capacity
+                  const isMyTeam = myTeam?.id === team.id
+                  const hasPendingRequest = pendingRequestTeamIds.has(team.id)
+                  const disabled = working || isMyTeam || myTeam !== null || hasPendingRequest || isFull || team.is_locked
 
-                return (
-                  <tr key={team.id}>
-                    <td>{team.name}</td>
-                    <td>{team.member_count}/{team.capacity}</td>
-                    <td>
-                      {team.is_locked ? (
-                        <span className="badge badge--warning">Locked</span>
-                      ) : isFull ? (
-                        <span className="badge badge--neutral">Full</span>
-                      ) : (
-                        <span className="badge badge--success">Open</span>
-                      )}
-                    </td>
-                    <td>
-                      {isMyTeam ? (
-                        <span className="badge">Current team</span>
-                      ) : hasPendingRequest ? (
-                        <span className="badge">Request pending</span>
-                      ) : (
-                        <button
-                          type="button"
-                          className="btn secondary"
-                          disabled={disabled}
-                          onClick={() => void handleRequestAccess(team.id)}
-                        >
-                          Request access
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+                  return (
+                    <tr key={team.id}>
+                      <td>{team.name}</td>
+                      <td>{team.member_count}/{team.capacity}</td>
+                      <td>
+                        {team.is_locked ? (
+                          <span className="badge badge--warning">Locked</span>
+                        ) : isFull ? (
+                          <span className="badge badge--neutral">Full</span>
+                        ) : (
+                          <span className="badge badge--success">Open</span>
+                        )}
+                      </td>
+                      <td>
+                        {isMyTeam ? (
+                          <span className="badge">Current team</span>
+                        ) : hasPendingRequest ? (
+                          <span className="badge">Request pending</span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn secondary"
+                            disabled={disabled}
+                            onClick={() => void handleRequestAccess(team.id)}
+                          >
+                            Request access
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </>
   )
