@@ -1,79 +1,78 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { clearTokens, readAccessToken, readRefreshToken, writeTokens } from '../lib/auth'
+import { apiRequest } from '../lib/api'
+import { authClient } from '../lib/neon-auth'
 import { AuthContext, type AuthContextValue, type UserRole } from './auth-context'
 
-function parseRole(token: string | null): UserRole | null {
-  if (!token) return null
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]))
-    const role = payload.role
-    if (role === 'admin' || role === 'participant') return role
-    return null
-  } catch {
-    return null
-  }
+type MeResponse = {
+  userId: string
+  displayName: string
+  role: UserRole
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [accessToken, setAccessToken] = useState<string | null>(readAccessToken())
-  const [isAuthLoading, setIsAuthLoading] = useState(() => !readAccessToken() && Boolean(readRefreshToken()))
+  const [userId, setUserId] = useState<string | null>(null)
+  const [userName, setUserName] = useState<string | null>(null)
+  const [userRole, setUserRole] = useState<UserRole | null>(null)
+  const [isAuthLoading, setIsAuthLoading] = useState(true)
+
+  const fetchProfile = useCallback(async () => {
+    try {
+      const me = await apiRequest<MeResponse>('/api/auth/me')
+      setUserId(me.userId)
+      setUserName(me.displayName)
+      setUserRole(me.role)
+    } catch {
+      setUserId(null)
+      setUserName(null)
+      setUserRole(null)
+    }
+  }, [])
 
   useEffect(() => {
-    if (!isAuthLoading) return
-
     let cancelled = false
 
-    async function attemptRefresh() {
-      const refreshToken = readRefreshToken()
-      if (!refreshToken) {
-        setIsAuthLoading(false)
-        return
-      }
-
+    async function checkSession() {
       try {
-        const response = await fetch('/api/auth/refresh', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refreshToken }),
-        })
+        const { data } = await authClient.getSession()
+        if (cancelled) return
 
-        if (response.ok) {
-          const data = (await response.json()) as { accessToken: string; refreshToken: string }
-          if (!cancelled) {
-            writeTokens(data.accessToken, data.refreshToken)
-            setAccessToken(data.accessToken)
-          }
-        } else {
-          if (!cancelled) clearTokens()
+        if (data?.session) {
+          await fetchProfile()
         }
       } catch {
-        if (!cancelled) clearTokens()
+        // No session
       } finally {
         if (!cancelled) setIsAuthLoading(false)
       }
     }
 
-    void attemptRefresh()
+    void checkSession()
     return () => { cancelled = true }
-  }, [isAuthLoading])
+  }, [fetchProfile])
+
+  const login = useCallback(async () => {
+    await fetchProfile()
+  }, [fetchProfile])
+
+  const logout = useCallback(async () => {
+    await authClient.signOut()
+    setUserId(null)
+    setUserName(null)
+    setUserRole(null)
+  }, [])
 
   const value = useMemo<AuthContextValue>(
     () => ({
-      accessToken,
-      userRole: parseRole(accessToken),
-      isAuthenticated: Boolean(accessToken),
+      userId,
+      userName,
+      userRole,
+      isAuthenticated: userId !== null,
       isAuthLoading,
-      login: (newAccessToken, refreshToken) => {
-        setAccessToken(newAccessToken)
-        writeTokens(newAccessToken, refreshToken ?? null)
-      },
-      logout: () => {
-        setAccessToken(null)
-        clearTokens()
-      },
+      login,
+      logout,
     }),
-    [accessToken, isAuthLoading],
+    [userId, userName, userRole, isAuthLoading, login, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

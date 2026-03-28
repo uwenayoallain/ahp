@@ -13,7 +13,7 @@ export function Navbar() {
         <div className={`net-status ${isOnline ? 'online' : 'offline'}`}>
           {isOnline ? 'Online' : 'Offline'}
         </div>
-        <Link className="btn secondary" to="/" onClick={logout}>
+        <Link className="btn secondary" to="/" onClick={() => void logout()}>
           Log out
         </Link>
       </div>

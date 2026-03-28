@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageHeader } from '../components/ui/PageHeader'
 import { apiRequest } from '../lib/api'
+import { formatDateTime } from '../lib/format'
 
 type Challenge = {
   id: number
@@ -12,6 +13,7 @@ type Challenge = {
   summary: string
   max_points: number
   unlock_at: string
+  submission_deadline_at: string | null
 }
 
 type ScheduleEvent = {
@@ -25,10 +27,40 @@ type ScheduleEvent = {
 type ChallengesResponse = { items: Challenge[] }
 type ScheduleResponse = { items: ScheduleEvent[] }
 
+function challengeState(challenge: Challenge) {
+  const now = Date.now()
+  const unlockAt = new Date(challenge.unlock_at).getTime()
+  const deadlineAt = challenge.submission_deadline_at ? new Date(challenge.submission_deadline_at).getTime() : null
+
+  if (Number.isFinite(unlockAt) && now < unlockAt) {
+    return {
+      label: 'Locked',
+      className: 'badge badge--warning',
+      detail: `Opens ${formatDateTime(challenge.unlock_at)}`,
+    }
+  }
+
+  if (deadlineAt !== null && now > deadlineAt) {
+    return {
+      label: 'Late window',
+      className: 'badge badge--neutral',
+      detail: `Deadline passed ${formatDateTime(challenge.submission_deadline_at!)}`,
+    }
+  }
+
+  return {
+    label: 'Open',
+    className: 'badge badge--success',
+    detail: challenge.submission_deadline_at
+      ? `Deadline ${formatDateTime(challenge.submission_deadline_at)}`
+      : 'Open for submissions',
+  }
+}
+
 export function SchedulePage() {
   const [challenges, setChallenges] = useState<Challenge[]>([])
   const [events, setEvents] = useState<ScheduleEvent[]>([])
-  const [selectedDay, setSelectedDay] = useState(1)
+  const [selectedDay, setSelectedDay] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -44,6 +76,11 @@ export function SchedulePage() {
         if (!cancelled) {
           setChallenges(cData.items)
           setEvents(sData.items)
+          const availableDays = [...new Set([
+            ...cData.items.map((challenge) => challenge.day_number),
+            ...sData.items.map((event) => event.day_number),
+          ])].sort((a, b) => a - b)
+          setSelectedDay(availableDays[0] ?? null)
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load schedule')
@@ -56,7 +93,10 @@ export function SchedulePage() {
     return () => { cancelled = true }
   }, [])
 
-  const days = [...new Set(events.map((e) => e.day_number))].sort()
+  const days = [...new Set([
+    ...challenges.map((challenge) => challenge.day_number),
+    ...events.map((event) => event.day_number),
+  ])].sort((a, b) => a - b)
   const dayEvents = events.filter((e) => e.day_number === selectedDay)
   const dayChallenge = challenges.find((c) => c.day_number === selectedDay)
 
@@ -98,14 +138,18 @@ export function SchedulePage() {
         ))}
       </div>
 
+      {days.length === 0 && <p className="status-text">No challenge days are configured for the active hackathon yet.</p>}
+
       {dayChallenge && (
         <Link to={`/app/challenges/${dayChallenge.slug}`} className="card">
           <div className="badge-row">
             <span className="badge">{dayChallenge.difficulty}</span>
             <span className="badge badge--success">{dayChallenge.max_points} pts</span>
+            <span className={challengeState(dayChallenge).className}>{challengeState(dayChallenge).label}</span>
           </div>
           <h3>{dayChallenge.title}</h3>
           <p>{dayChallenge.summary}</p>
+          <p>{challengeState(dayChallenge).detail}</p>
         </Link>
       )}
 

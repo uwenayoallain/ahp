@@ -1,15 +1,34 @@
-import { useCallback, useEffect, useState } from 'react'
-import type { FormEvent } from 'react'
-import { DataTable } from '../components/ui/DataTable'
-import { EmptyState } from '../components/ui/EmptyState'
+import { useEffect, useState } from 'react'
 import { PageHeader } from '../components/ui/PageHeader'
+import { useAuth } from '../hooks/useAuth'
 import { apiRequest } from '../lib/api'
+import { formatDateTime } from '../lib/format'
+
+type TeamRecord = {
+  id: number
+  name: string
+  created_by: string
+  member_count: number
+  capacity: number
+  is_locked: boolean
+}
 
 type TeamMember = {
-  id: number
+  id: string
   name: string
   role: string
   joined_at: string
+}
+
+type TeamRequest = {
+  id: number
+  team_id: number
+  team_name?: string
+  requester_user_id?: string
+  requester_name?: string
+  status: string
+  message?: string
+  created_at: string
 }
 
 type MyTeam = {
@@ -18,258 +37,422 @@ type MyTeam = {
   members: TeamMember[]
 }
 
-type TeamSummary = {
-  id: number
-  name: string
-  created_by: number
-  member_count: number
-}
-
 type TeamsResponse = {
-  items: TeamSummary[]
+  items: TeamRecord[]
   myTeam: MyTeam | null
+  incomingRequests: TeamRequest[]
+  myRequests: TeamRequest[]
 }
 
-type Feedback = {
-  type: 'success' | 'error'
-  text: string
+function myLeadStatus(myTeam: MyTeam | null, userId: string | null) {
+  if (!myTeam || !userId) {
+    return false
+  }
+
+  return myTeam.members.some((member) => member.id === userId && member.role === 'lead')
 }
 
 export function TeamsPage() {
-  const [teams, setTeams] = useState<TeamSummary[]>([])
+  const { userId } = useAuth()
+  const [teams, setTeams] = useState<TeamRecord[]>([])
   const [myTeam, setMyTeam] = useState<MyTeam | null>(null)
+  const [incomingRequests, setIncomingRequests] = useState<TeamRequest[]>([])
+  const [myRequests, setMyRequests] = useState<TeamRequest[]>([])
+  const [teamName, setTeamName] = useState('')
   const [loading, setLoading] = useState(true)
-  const [newName, setNewName] = useState('')
-  const [feedback, setFeedback] = useState<Feedback | null>(null)
-  const [confirmLeave, setConfirmLeave] = useState(false)
-  const [busy, setBusy] = useState(false)
-
-  const loadTeams = useCallback(async () => {
-    const data = await apiRequest<TeamsResponse>('/api/teams')
-    setTeams(data.items)
-    setMyTeam(data.myTeam)
-  }, [])
+  const [working, setWorking] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
 
   useEffect(() => {
     let cancelled = false
 
     async function load() {
       try {
-        await loadTeams()
+        const data = await apiRequest<TeamsResponse>('/api/teams')
+        if (cancelled) {
+          return
+        }
+
+        setTeams(data.items)
+        setMyTeam(data.myTeam)
+        setIncomingRequests(data.incomingRequests)
+        setMyRequests(data.myRequests)
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load teams')
+        }
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+        }
       }
     }
 
     void load()
     return () => { cancelled = true }
-  }, [loadTeams])
+  }, [])
 
-  function showFeedback(type: 'success' | 'error', text: string) {
-    setFeedback({ type, text })
-    if (type === 'success') {
-      setTimeout(() => setFeedback(null), 3000)
-    }
+  async function refreshTeams() {
+    const data = await apiRequest<TeamsResponse>('/api/teams')
+    setTeams(data.items)
+    setMyTeam(data.myTeam)
+    setIncomingRequests(data.incomingRequests)
+    setMyRequests(data.myRequests)
   }
 
-  async function handleCreate(event: FormEvent) {
-    event.preventDefault()
-    setFeedback(null)
-    setBusy(true)
+  async function handleCreateTeam() {
+    setWorking(true)
+    setError('')
+    setMessage('')
 
     try {
-      await apiRequest('/api/teams', {
+      const created = await apiRequest<{ id: number; name: string }>('/api/teams', {
         method: 'POST',
-        body: JSON.stringify({ name: newName }),
+        body: JSON.stringify({ name: teamName }),
       })
-      setNewName('')
-      showFeedback('success', 'Team created successfully.')
-      await loadTeams()
+      setTeamName('')
+      await refreshTeams()
+      setMessage(`Team ${created.name} created.`)
     } catch (err) {
-      showFeedback('error', err instanceof Error ? err.message : 'Failed to create team')
+      setError(err instanceof Error ? err.message : 'Failed to create team')
     } finally {
-      setBusy(false)
+      setWorking(false)
     }
   }
 
-  async function handleJoin(teamId: number) {
-    setFeedback(null)
-    setBusy(true)
+  async function handleRequestAccess(teamId: number) {
+    setWorking(true)
+    setError('')
+    setMessage('')
 
     try {
-      await apiRequest(`/api/teams/${teamId}/join`, { method: 'POST' })
-      showFeedback('success', 'Joined team.')
-      await loadTeams()
+      await apiRequest(`/api/teams/${teamId}/requests`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      })
+      await refreshTeams()
+      setMessage('Access request sent.')
     } catch (err) {
-      showFeedback('error', err instanceof Error ? err.message : 'Failed to join team')
+      setError(err instanceof Error ? err.message : 'Failed to request team access')
     } finally {
-      setBusy(false)
+      setWorking(false)
     }
   }
 
-  async function handleLeave(teamId: number) {
-    setFeedback(null)
-    setBusy(true)
+  async function handleCancelRequest(requestId: number) {
+    setWorking(true)
+    setError('')
+    setMessage('')
 
     try {
-      await apiRequest(`/api/teams/${teamId}/leave`, { method: 'POST' })
-      setConfirmLeave(false)
-      showFeedback('success', 'You left the team.')
-      await loadTeams()
+      await apiRequest(`/api/teams/requests/${requestId}/cancel`, {
+        method: 'POST',
+      })
+      await refreshTeams()
+      setMessage('Request cancelled.')
     } catch (err) {
-      showFeedback('error', err instanceof Error ? err.message : 'Failed to leave team')
+      setError(err instanceof Error ? err.message : 'Failed to cancel request')
     } finally {
-      setBusy(false)
+      setWorking(false)
     }
   }
+
+  async function handleApproveRequest(requestId: number) {
+    setWorking(true)
+    setError('')
+    setMessage('')
+
+    try {
+      await apiRequest(`/api/teams/requests/${requestId}/approve`, {
+        method: 'POST',
+      })
+      await refreshTeams()
+      setMessage('Request approved.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to approve request')
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  async function handleRejectRequest(requestId: number) {
+    setWorking(true)
+    setError('')
+    setMessage('')
+
+    try {
+      await apiRequest(`/api/teams/requests/${requestId}/reject`, {
+        method: 'POST',
+      })
+      await refreshTeams()
+      setMessage('Request rejected.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reject request')
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  async function handleLeaveTeam() {
+    if (!myTeam) {
+      return
+    }
+
+    setWorking(true)
+    setError('')
+    setMessage('')
+
+    try {
+      await apiRequest(`/api/teams/${myTeam.id}/leave`, {
+        method: 'POST',
+      })
+      await refreshTeams()
+      setMessage('You left the team.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to leave team')
+    } finally {
+      setWorking(false)
+    }
+  }
+
+  const isLead = myLeadStatus(myTeam, userId)
+  const pendingRequestTeamIds = new Set(
+    myRequests.filter((request) => request.status === 'pending').map((request) => request.team_id),
+  )
 
   if (loading) {
     return (
       <>
-        <PageHeader title="Teams" subtitle="Create or join a team for the hackathon." />
+        <PageHeader title="Teams" subtitle="Create a team or request access to an existing one." />
         <p className="status-text">Loading...</p>
       </>
     )
   }
 
-  const memberColumns = [
-    {
-      key: 'name',
-      header: 'Member',
-      render: (m: TeamMember) => m.name,
-    },
-    {
-      key: 'role',
-      header: 'Role',
-      render: (m: TeamMember) => (
-        <span className={`badge ${m.role === 'lead' ? 'badge--success' : 'badge--neutral'}`}>
-          {m.role}
-        </span>
-      ),
-    },
-  ]
-
-  const allTeamsColumns = [
-    {
-      key: 'name',
-      header: 'Team',
-      render: (t: TeamSummary) => <strong>{t.name}</strong>,
-    },
-    {
-      key: 'members',
-      header: 'Members',
-      render: (t: TeamSummary) => t.member_count,
-    },
-    ...(!myTeam
-      ? [
-          {
-            key: 'actions',
-            header: '',
-            render: (t: TeamSummary) => (
-              <button
-                className="btn secondary"
-                type="button"
-                disabled={busy}
-                onClick={() => handleJoin(t.id)}
-              >
-                Join
-              </button>
-            ),
-          },
-        ]
-      : []),
-  ]
-
   return (
     <>
       <PageHeader
         title="Teams"
-        subtitle="Create or join a team for the hackathon."
+        subtitle="Create a team or request access to an existing one."
       />
 
-      {feedback && (
-        <p className={`feedback feedback--${feedback.type}`}>{feedback.text}</p>
-      )}
+      {error && <p className="status-text status-text--error">{error}</p>}
+      {message && <p className="status-text">{message}</p>}
 
-      {myTeam && (
-        <article className="card">
-          <h3>Your team: {myTeam.name}</h3>
-          <DataTable
-            columns={memberColumns}
-            data={myTeam.members}
-            keyExtractor={(m) => m.id}
-          />
+      {myTeam ? (
+        <section className="panel-surface table-panel">
+          <h3>My Team</h3>
           <div className="actions">
-            {confirmLeave ? (
-              <>
-                <span className="caption-text">
-                  Leave this team?
-                </span>
-                <button
-                  className="btn danger"
-                  type="button"
-                  disabled={busy}
-                  onClick={() => handleLeave(myTeam.id)}
-                >
-                  Confirm
-                </button>
-                <button
-                  className="btn secondary"
-                  type="button"
-                  onClick={() => setConfirmLeave(false)}
-                >
-                  Cancel
-                </button>
-              </>
+            <span className="badge">{myTeam.name}</span>
+            {teams.find((item) => item.id === myTeam.id)?.is_locked ? (
+              <span className="badge badge--warning">Locked after first submission</span>
             ) : (
               <button
-                className="btn danger"
                 type="button"
-                onClick={() => setConfirmLeave(true)}
+                className="btn secondary"
+                disabled={working}
+                onClick={() => void handleLeaveTeam()}
               >
                 Leave team
               </button>
             )}
           </div>
-        </article>
-      )}
-
-      {!myTeam && (
-        <article className="card">
-          <h3>Create a team</h3>
-          <form className="form-grid" onSubmit={handleCreate}>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Role</th>
+                  <th>Joined</th>
+                </tr>
+              </thead>
+              <tbody>
+                {myTeam.members.map((member) => (
+                  <tr key={member.id}>
+                    <td>{member.name || member.id}</td>
+                    <td>{member.role}</td>
+                    <td>{formatDateTime(member.joined_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : (
+        <section className="panel-surface table-panel">
+          <h3>Create Team</h3>
+          <div className="form-grid">
             <label>
               Team name
               <input
-                value={newName}
-                onChange={(event) => setNewName(event.target.value)}
-                placeholder="e.g. Circuit Breakers"
-                required
-                minLength={2}
-                maxLength={50}
+                value={teamName}
+                placeholder="Enter a team name"
+                onChange={(event) => setTeamName(event.target.value)}
               />
             </label>
-            <div className="actions">
-              <button type="submit" className="btn primary" disabled={busy}>
-                {busy ? 'Creating...' : 'Create team'}
-              </button>
-            </div>
-          </form>
-        </article>
+          </div>
+          <div className="actions">
+            <button
+              type="button"
+              className="btn primary"
+              disabled={working || teamName.trim().length < 2 || pendingRequestTeamIds.size > 0}
+              onClick={() => void handleCreateTeam()}
+            >
+              Create team
+            </button>
+            {pendingRequestTeamIds.size > 0 && (
+              <span className="badge badge--warning">Cancel pending requests before creating a new team.</span>
+            )}
+          </div>
+        </section>
       )}
 
-      <article className="card">
-        <h3>All teams</h3>
-        {teams.length === 0 ? (
-          <EmptyState message="No teams yet. Be the first to create one." />
-        ) : (
-          <DataTable
-            columns={allTeamsColumns}
-            data={teams}
-            keyExtractor={(t) => t.id}
-          />
-        )}
-      </article>
+      {myRequests.length > 0 && (
+        <section className="panel-surface table-panel">
+          <h3>My Requests</h3>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Team</th>
+                  <th>Status</th>
+                  <th>Requested</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {myRequests.map((request) => (
+                  <tr key={request.id}>
+                    <td>{request.team_name ?? teams.find((team) => team.id === request.team_id)?.name ?? `Team ${request.team_id}`}</td>
+                    <td>
+                      <span className={request.status === 'pending' ? 'badge' : 'badge badge--neutral'}>
+                        {request.status}
+                      </span>
+                    </td>
+                    <td>{formatDateTime(request.created_at)}</td>
+                    <td>
+                      {request.status === 'pending' && (
+                        <button
+                          type="button"
+                          className="btn secondary"
+                          disabled={working}
+                          onClick={() => void handleCancelRequest(request.id)}
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {isLead && incomingRequests.length > 0 && (
+        <section className="panel-surface table-panel">
+          <h3>Incoming Requests</h3>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Requester</th>
+                  <th>Message</th>
+                  <th>Requested</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {incomingRequests.map((request) => (
+                  <tr key={request.id}>
+                    <td>{request.requester_name ?? request.requester_user_id}</td>
+                    <td>{request.message || '--'}</td>
+                    <td>{formatDateTime(request.created_at)}</td>
+                    <td>
+                      <div className="actions">
+                        <button
+                          type="button"
+                          className="btn primary"
+                          disabled={working}
+                          onClick={() => void handleApproveRequest(request.id)}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          className="btn secondary"
+                          disabled={working}
+                          onClick={() => void handleRejectRequest(request.id)}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      <section className="panel-surface table-panel">
+        <h3>All Teams</h3>
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Members</th>
+                <th>Status</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {teams.map((team) => {
+                const isFull = team.member_count >= team.capacity
+                const isMyTeam = myTeam?.id === team.id
+                const hasPendingRequest = pendingRequestTeamIds.has(team.id)
+                const disabled = working || isMyTeam || myTeam !== null || hasPendingRequest || isFull || team.is_locked
+
+                return (
+                  <tr key={team.id}>
+                    <td>{team.name}</td>
+                    <td>{team.member_count}/{team.capacity}</td>
+                    <td>
+                      {team.is_locked ? (
+                        <span className="badge badge--warning">Locked</span>
+                      ) : isFull ? (
+                        <span className="badge badge--neutral">Full</span>
+                      ) : (
+                        <span className="badge badge--success">Open</span>
+                      )}
+                    </td>
+                    <td>
+                      {isMyTeam ? (
+                        <span className="badge">Current team</span>
+                      ) : hasPendingRequest ? (
+                        <span className="badge">Request pending</span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn secondary"
+                          disabled={disabled}
+                          onClick={() => void handleRequestAccess(team.id)}
+                        >
+                          Request access
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </>
   )
 }

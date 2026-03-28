@@ -1,4 +1,4 @@
-import { clearTokens, readAccessToken, readRefreshToken, writeTokens } from './auth'
+import { getAccessToken } from './auth'
 
 type ApiOptions = RequestInit & {
   fallbackData?: unknown
@@ -10,51 +10,11 @@ type ApiErrorPayload = {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
-let refreshPromise: Promise<string | null> | null = null
-
 function toUrl(path: string) {
   if (path.startsWith('http://') || path.startsWith('https://')) {
     return path
   }
   return `${API_BASE_URL}${path}`
-}
-
-async function refreshAccessToken(): Promise<string | null> {
-  const refreshToken = readRefreshToken()
-  if (!refreshToken) return null
-
-  try {
-    const response = await fetch(toUrl('/api/auth/refresh'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken }),
-    })
-
-    if (!response.ok) {
-      clearTokens()
-      return null
-    }
-
-    const data = (await response.json()) as {
-      accessToken: string
-      refreshToken: string
-    }
-
-    writeTokens(data.accessToken, data.refreshToken)
-    return data.accessToken
-  } catch {
-    clearTokens()
-    return null
-  }
-}
-
-function tryRefresh(): Promise<string | null> {
-  if (!refreshPromise) {
-    refreshPromise = refreshAccessToken().finally(() => {
-      refreshPromise = null
-    })
-  }
-  return refreshPromise
 }
 
 async function doFetch(path: string, options: ApiOptions, token: string | null): Promise<Response> {
@@ -69,16 +29,8 @@ async function doFetch(path: string, options: ApiOptions, token: string | null):
 }
 
 export async function apiRequest<T>(path: string, options: ApiOptions = {}) {
-  let token = readAccessToken()
-  let response = await doFetch(path, options, token)
-
-  if (response.status === 401 && readRefreshToken()) {
-    const newToken = await tryRefresh()
-    if (newToken) {
-      token = newToken
-      response = await doFetch(path, options, token)
-    }
-  }
+  const token = await getAccessToken()
+  const response = await doFetch(path, options, token)
 
   if (!response.ok) {
     if (options.fallbackData !== undefined) {

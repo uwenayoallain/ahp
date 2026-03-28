@@ -1,4 +1,4 @@
-import { readAccessToken } from './auth'
+import { getAccessToken } from './auth'
 import {
   enqueueSyncAction,
   getQueuedSyncActions,
@@ -24,7 +24,7 @@ export async function queueSubmissionSync(localId: string, payload: unknown) {
 
 export async function flushSyncQueue() {
   const queued = await getQueuedSyncActions()
-  const accessToken = readAccessToken()
+  const accessToken = await getAccessToken()
   const now = new Date().toISOString()
   let processed = 0
 

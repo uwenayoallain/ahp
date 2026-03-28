@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { PageHeader } from '../components/ui/PageHeader'
 import { apiRequest } from '../lib/api'
+import { formatDateTime } from '../lib/format'
 
 type Resource = {
   label: string
@@ -21,6 +22,37 @@ type Challenge = {
   resources: Resource[]
   max_points: number
   unlock_at: string
+  submission_deadline_at: string | null
+}
+
+function challengeAvailability(challenge: Challenge) {
+  const now = Date.now()
+  const unlockAt = new Date(challenge.unlock_at).getTime()
+  const deadlineAt = challenge.submission_deadline_at ? new Date(challenge.submission_deadline_at).getTime() : null
+
+  if (Number.isFinite(unlockAt) && now < unlockAt) {
+    return {
+      label: 'Locked',
+      className: 'badge badge--warning',
+      detail: `Opens ${formatDateTime(challenge.unlock_at)}`,
+    }
+  }
+
+  if (deadlineAt !== null && now > deadlineAt) {
+    return {
+      label: 'Late window',
+      className: 'badge badge--neutral',
+      detail: `Deadline passed ${formatDateTime(challenge.submission_deadline_at!)}`,
+    }
+  }
+
+  return {
+    label: 'Open',
+    className: 'badge badge--success',
+    detail: challenge.submission_deadline_at
+      ? `Deadline ${formatDateTime(challenge.submission_deadline_at)}`
+      : 'Open for submissions',
+  }
 }
 
 export function ChallengeDetailPage() {
@@ -68,6 +100,8 @@ export function ChallengeDetailPage() {
     )
   }
 
+  const availability = challengeAvailability(challenge)
+
   return (
     <>
       <PageHeader
@@ -78,7 +112,10 @@ export function ChallengeDetailPage() {
       <div className="badge-row">
         <span className="badge">{challenge.difficulty}</span>
         <span className="badge badge--success">{challenge.max_points} pts</span>
+        <span className={availability.className}>{availability.label}</span>
       </div>
+
+      <p>{availability.detail}</p>
 
       <article className="card">
         <h3>Description</h3>

@@ -1,9 +1,73 @@
 import { apiRequest } from '../../lib/api'
 import type { AdminSubmissionRecord, SubmissionStatus } from './submissionsData'
 
+export type HackathonRecord = {
+  id: number
+  name: string
+  slug: string
+  description: string
+  startDate: string
+  endDate: string
+  isActive: boolean
+  teamSizeMin: number
+  teamSizeMax: number
+  latePolicy: 'reject' | 'accept_with_penalty'
+  latePenaltyPercentPerHour: number
+}
+
+export type HackathonPayload = {
+  name: string
+  slug: string
+  description: string
+  startDate: string
+  endDate: string
+  teamSizeMin: number
+  teamSizeMax: number
+  latePolicy: 'reject' | 'accept_with_penalty'
+  latePenaltyPercentPerHour: number
+}
+
+export type AdminChallengeRecord = {
+  id: number
+  dayNumber: number
+  title: string
+  slug: string
+  difficulty: string
+  summary: string
+  description: string
+  setupInstructions: string
+  resources: string
+  maxPoints: number
+  unlockAt: string | null
+  submissionDeadlineAt: string | null
+}
+
+export type AdminScheduleRecord = {
+  id: number
+  dayNumber: number
+  time: string
+  title: string
+  venue: string
+  sortOrder: number
+}
+
+export type AdminRuleRecord = {
+  id: number
+  title: string
+  body: string
+  sortOrder: number
+}
+
+export type AdminSkillModuleRecord = {
+  id: string
+  title: string
+  description: string
+  sortOrder: number
+}
+
 type AdminApiSubmissionRow = {
   id: number
-  user_id: number
+  user_id: string
   user_name: string
   team_name: string
   project_title: string
@@ -23,7 +87,7 @@ type AdminApiStats = {
 }
 
 type AdminApiUserRow = {
-  id: number
+  id: string
   name: string
   email: string
   role: string
@@ -54,7 +118,7 @@ function mapAdminSubmissionRows(rows: AdminApiSubmissionRow[]): AdminSubmissionR
 
 type AdminApiSubmissionDetail = {
   id: number
-  user_id: number
+  user_id: string
   user_name: string
   team_id: number | null
   team_name: string
@@ -73,7 +137,7 @@ type AdminApiSubmissionDetail = {
 
 export type AdminSubmissionDetail = {
   id: string
-  userId: number
+  userId: string
   userName: string
   team: string
   projectTitle: string
@@ -115,6 +179,103 @@ export async function fetchAdminSubmission(id: string) {
 
 export async function fetchAdminStats() {
   return apiRequest<AdminApiStats>('/api/admin/stats')
+}
+
+export async function fetchAdminHackathons() {
+  const response = await apiRequest<{ items: HackathonRecord[] }>('/api/admin/hackathons')
+  return response.items
+}
+
+export async function createAdminHackathon(payload: HackathonPayload) {
+  return apiRequest<HackathonRecord>('/api/admin/hackathons', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function updateAdminHackathon(id: number, payload: Partial<HackathonPayload>) {
+  return apiRequest<HackathonRecord>(`/api/admin/hackathons/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function activateAdminHackathon(id: number) {
+  return apiRequest<{ status: string; id: number }>(`/api/admin/hackathons/${id}/activate`, {
+    method: 'POST',
+  })
+}
+
+export async function fetchAdminChallenges(hackathonId: number) {
+  const response = await apiRequest<{ items: AdminChallengeRecord[] }>(`/api/admin/hackathons/${hackathonId}/challenges`)
+  return response.items
+}
+
+export async function createAdminChallenge(hackathonId: number, payload: Omit<AdminChallengeRecord, 'id'>) {
+  return apiRequest<AdminChallengeRecord>(`/api/admin/hackathons/${hackathonId}/challenges`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function deleteAdminChallenge(hackathonId: number, challengeId: number) {
+  return apiRequest<{ status: string; id: number }>(`/api/admin/hackathons/${hackathonId}/challenges/${challengeId}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function fetchAdminSchedule(hackathonId: number) {
+  const response = await apiRequest<{ items: AdminScheduleRecord[] }>(`/api/admin/hackathons/${hackathonId}/schedule`)
+  return response.items
+}
+
+export async function createAdminScheduleEvent(hackathonId: number, payload: Omit<AdminScheduleRecord, 'id'>) {
+  return apiRequest<AdminScheduleRecord>(`/api/admin/hackathons/${hackathonId}/schedule`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function deleteAdminScheduleEvent(hackathonId: number, eventId: number) {
+  return apiRequest<{ status: string; id: number }>(`/api/admin/hackathons/${hackathonId}/schedule/${eventId}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function fetchAdminRules(hackathonId: number) {
+  const response = await apiRequest<{ items: AdminRuleRecord[] }>(`/api/admin/hackathons/${hackathonId}/rules`)
+  return response.items
+}
+
+export async function createAdminRule(hackathonId: number, payload: Omit<AdminRuleRecord, 'id'>) {
+  return apiRequest<AdminRuleRecord>(`/api/admin/hackathons/${hackathonId}/rules`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function deleteAdminRule(hackathonId: number, ruleId: number) {
+  return apiRequest<{ status: string; id: number }>(`/api/admin/hackathons/${hackathonId}/rules/${ruleId}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function fetchAdminSkillModules(hackathonId: number) {
+  const response = await apiRequest<{ items: AdminSkillModuleRecord[] }>(`/api/admin/hackathons/${hackathonId}/skill-modules`)
+  return response.items
+}
+
+export async function createAdminSkillModule(hackathonId: number, payload: AdminSkillModuleRecord) {
+  return apiRequest<AdminSkillModuleRecord>(`/api/admin/hackathons/${hackathonId}/skill-modules`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function deleteAdminSkillModule(hackathonId: number, moduleId: string) {
+  return apiRequest<{ status: string; id: string }>(`/api/admin/hackathons/${hackathonId}/skill-modules/${moduleId}`, {
+    method: 'DELETE',
+  })
 }
 
 export async function fetchAdminUsers() {

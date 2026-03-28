@@ -1,11 +1,17 @@
 import { useEffect, useState } from 'react'
 import { PageHeader } from '../../components/ui/PageHeader'
+import { formatDateTime } from '../../lib/format'
 import { fetchAdminStats, fetchAdminSubmissions } from './adminApi'
 
 type DashboardStats = {
   totalSubmissions: number
   totalUsers: number
   reviewRate: number
+}
+
+type ActivityRow = {
+  label: string
+  submittedAt: string
 }
 
 const initialStats: DashboardStats = {
@@ -16,7 +22,7 @@ const initialStats: DashboardStats = {
 
 export function AdminDashboardPage() {
   const [stats, setStats] = useState(initialStats)
-  const [activityRows, setActivityRows] = useState<string[]>([])
+  const [activityRows, setActivityRows] = useState<ActivityRow[]>([])
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -32,7 +38,10 @@ export function AdminDashboardPage() {
         if (cancelled === false) {
           setStats(statsPayload)
           setActivityRows(
-            submissions.slice(0, 5).map((row) => `${row.team} submitted ${row.projectTitle}`),
+            submissions.slice(0, 5).map((row) => ({
+              label: `${row.team || row.userName} submitted ${row.projectTitle}`,
+              submittedAt: row.submittedAt,
+            })),
           )
         }
       } catch (err) {
@@ -79,11 +88,11 @@ export function AdminDashboardPage() {
       {activityRows.length > 0 && (
         <section className="panel-surface table-panel">
           <h3>Recent Activity</h3>
-          <div className="timeline">
-            {activityRows.map((item, index) => (
-              <div className="timeline-item" key={`${item}-${index}`}>
-                <p className="timeline-time">-{index + 1}m</p>
-                <p>{item}</p>
+            <div className="timeline">
+            {activityRows.map((item) => (
+              <div className="timeline-item" key={`${item.label}-${item.submittedAt}`}>
+                <p className="timeline-time">{formatDateTime(item.submittedAt)}</p>
+                <p>{item.label}</p>
               </div>
             ))}
           </div>
