@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { authClient } from '../lib/neon-auth'
+import { getAuthClient } from '../lib/neon-auth'
 
 export function LoginPage() {
   const location = useLocation()
@@ -31,11 +31,12 @@ export function LoginPage() {
     setError('')
 
     try {
+      const client = getAuthClient()
       if (mode === 'login') {
-        const { error: authError } = await authClient.signIn.email({ email, password })
+        const { error: authError } = await (client as unknown as { signIn: { email: (params: { email: string, password: string }) => Promise<{ error: { message?: string } | null }> } }).signIn.email({ email, password })
         if (authError) throw new Error(authError.message ?? 'Sign in failed')
       } else {
-        const { error: authError } = await authClient.signUp.email({ email, password, name })
+        const { error: authError } = await (client as unknown as { signUp: { email: (params: { email: string, password: string, name: string }) => Promise<{ error: { message?: string } | null }> } }).signUp.email({ email, password, name })
         if (authError) throw new Error(authError.message ?? 'Registration failed')
       }
 

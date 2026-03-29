@@ -1,3 +1,13 @@
 import { createAuthClient } from '@neondatabase/neon-js/auth'
+import { getConfig } from './config'
 
-export const authClient = createAuthClient(import.meta.env.VITE_NEON_AUTH_URL)
+type AuthClient = ReturnType<typeof createAuthClient>
+
+let _client: AuthClient | null = null
+
+export function getAuthClient(): AuthClient {
+  if (!_client) {
+    _client = createAuthClient(getConfig().neonAuthUrl)
+  }
+  return _client
+}

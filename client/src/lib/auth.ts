@@ -1,9 +1,9 @@
-import { authClient } from './neon-auth'
+import { getAuthClient } from './neon-auth'
 
 export async function getAccessToken(): Promise<string | null> {
   try {
-    const { data } = await authClient.getSession()
-    return data?.session?.token ?? null
+    const { data } = await getAuthClient().getSession()
+    return (data as { session?: { token?: string } } | null)?.session?.token ?? null
   } catch {
     return null
   }
