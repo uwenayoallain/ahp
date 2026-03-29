@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { Express } from 'express'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import request from 'supertest'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import { getDb, initializeDbForTests, resetDbForTests } from '../db/connection.js'
@@ -137,6 +137,57 @@ describe('health', () => {
 
     expect(res.status).toBe(200)
     expect(res.body).toEqual({ status: 'ok' })
+  })
+})
+
+describe('auth', () => {
+  test('GET /api/auth/me returns a fallback profile when profile creation loses the neon user row', async () => {
+    const userId = testUserId('lagging-auth-user')
+    const db = getDb()
+
+    await db.insert(neonAuthUsersSync).values({
+      id: userId,
+      name: 'Lagging Auth User',
+      email: 'lagging-auth-user@example.com',
+    })
+
+    await db.execute(sql.raw(`
+      create or replace function delete_neon_user_before_profile_insert()
+      returns trigger as $$
+      begin
+        delete from neon_auth.users_sync where id = new.user_id;
+        return new;
+      end;
+      $$ language plpgsql;
+    `))
+
+    await db.execute(sql.raw(`
+      create trigger delete_neon_user_before_profile_insert
+      before insert on user_profiles
+      for each row
+      execute function delete_neon_user_before_profile_insert();
+    `))
+
+    const res = await request(app)
+      .get('/api/auth/me')
+      .set(authHeaders(userId))
+
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({
+      userId,
+      displayName: 'Lagging Auth User',
+      role: 'participant',
+      avatarUrl: '',
+      bio: '',
+      email: 'lagging-auth-user@example.com',
+    })
+
+    const [profile] = await db
+      .select({ userId: userProfiles.userId })
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+
+    expect(profile).toBeUndefined()
   })
 })
 

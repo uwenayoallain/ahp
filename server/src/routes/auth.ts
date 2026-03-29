@@ -4,6 +4,22 @@ import { getDb } from '../db/connection.js'
 import { userProfiles, neonAuthUsersSync } from '../db/schema.js'
 import { requireAuth } from '../middleware/auth.js'
 
+function isUserProfilesForeignKeyError(error: unknown) {
+  if (!error || typeof error !== 'object' || !('cause' in error)) {
+    return false
+  }
+
+  const { cause } = error
+  if (!cause || typeof cause !== 'object') {
+    return false
+  }
+
+  const code = 'code' in cause ? cause.code : undefined
+  const table = 'table' in cause ? cause.table : undefined
+
+  return code === '23503' && table === 'user_profiles'
+}
+
 export const authRouter = Router()
 
 authRouter.get('/me', requireAuth, async (req, res) => {
@@ -36,13 +52,22 @@ authRouter.get('/me', requireAuth, async (req, res) => {
     .where(eq(neonAuthUsersSync.id, userId))
 
   const displayName = neonUser?.name ?? ''
+  const profile = { userId, displayName, role: 'participant' as const, avatarUrl: '', bio: '', email: neonUser?.email ?? '' }
 
-  await db
-    .insert(userProfiles)
-    .values({ userId, displayName, role: 'participant' })
-    .onConflictDoNothing()
+  if (neonUser) {
+    try {
+      await db
+        .insert(userProfiles)
+        .values({ userId, displayName, role: 'participant' })
+        .onConflictDoNothing()
+    } catch (error) {
+      if (!isUserProfilesForeignKeyError(error)) {
+        throw error
+      }
+    }
+  }
 
-  return res.json({ userId, displayName, role: 'participant', avatarUrl: '', bio: '', email: neonUser?.email ?? '' })
+  return res.json(profile)
 })
 
 authRouter.patch('/profile', requireAuth, async (req, res) => {
