@@ -19,7 +19,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY server/package.json server/
 COPY --from=build /app/client/dist client/dist
 COPY --from=build /app/server/dist server/dist
-RUN pnpm install --frozen-lockfile --prod --filter server
+RUN pnpm install --frozen-lockfile --prod --ignore-scripts --filter server
 ENV NODE_ENV=production
 ENV PORT=8080
 EXPOSE 8080
