@@ -14,6 +14,8 @@ export const userProfiles = pgTable('user_profiles', {
   userId: uuid('user_id').primaryKey().references(() => neonAuthUsersSync.id, { onDelete: 'cascade' }),
   displayName: text('display_name').notNull().default(''),
   role: text('role').notNull().default('participant'),
+  avatarUrl: text('avatar_url').notNull().default(''),
+  bio: text('bio').notNull().default(''),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 

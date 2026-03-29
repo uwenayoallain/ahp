@@ -12,8 +12,13 @@ CREATE TABLE IF NOT EXISTS user_profiles (
   user_id uuid PRIMARY KEY REFERENCES neon_auth.users_sync (id) ON DELETE CASCADE,
   display_name text NOT NULL DEFAULT '',
   role text NOT NULL DEFAULT 'participant',
+  avatar_url text NOT NULL DEFAULT '',
+  bio text NOT NULL DEFAULT '',
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS avatar_url text NOT NULL DEFAULT '';
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS bio text NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS hackathons (
   id serial PRIMARY KEY,

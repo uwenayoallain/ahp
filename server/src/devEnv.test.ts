@@ -22,7 +22,9 @@ describe('applyDevEnv', () => {
     const { applyDevEnv } = await import('./devEnv.js')
     applyDevEnv()
 
-    expect(config).toHaveBeenCalledWith({ path: '.env' })
+    expect(config).toHaveBeenCalledTimes(4)
+    const firstCall = config.mock.calls[0] as unknown as [{ path: string }]
+    expect(firstCall[0].path).toMatch(/\.env$/)
   })
 
   test('does not load .env during tests', async () => {

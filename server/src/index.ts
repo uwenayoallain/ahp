@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import cors from 'cors'
 import express from 'express'
 import { adminRouter } from './routes/admin.js'
@@ -36,6 +39,12 @@ export function createApp() {
     res.json({ status: 'ok' })
   })
 
+  app.get('/api/config', (_req, res) => {
+    res.json({
+      neonAuthUrl: process.env.NEON_AUTH_URL ?? '',
+    })
+  })
+
   app.use('/api/auth', authRouter)
   app.use('/api/sync', syncRouter)
   app.use('/api/submissions', submissionsRouter)
@@ -48,6 +57,27 @@ export function createApp() {
   app.use('/api/leaderboard', leaderboardRouter)
   app.use('/api/teams', teamsRouter)
   app.use('/api/me/stats', statsRouter)
+
+  if (process.env.NODE_ENV === 'production') {
+    const clientDist = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '../../client/dist',
+    )
+    if (existsSync(clientDist)) {
+      app.use(express.static(clientDist))
+      app.use((req, res, next) => {
+        if (req.method !== 'GET' || req.path.startsWith('/api')) {
+          next()
+          return
+        }
+        res.sendFile(path.join(clientDist, 'index.html'), (err) => {
+          if (err) {
+            next(err)
+          }
+        })
+      })
+    }
+  }
 
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error(error)

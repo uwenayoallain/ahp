@@ -1,18 +1,14 @@
-import { PGlite } from '@electric-sql/pglite'
 import { Pool, neonConfig } from '@neondatabase/serverless'
 import { drizzle as drizzleNeon } from 'drizzle-orm/neon-serverless'
-import { drizzle as drizzlePglite } from 'drizzle-orm/pglite'
 import ws from 'ws'
-import { ensureSchemaSql } from './bootstrap.js'
 import * as schema from './schema.js'
 
 neonConfig.webSocketConstructor = ws
 
-// Use the Neon type as the canonical DB type. PGlite is cast to it for tests.
 type Db = ReturnType<typeof drizzleNeon<typeof schema>>
 
 let pool: Pool | null = null
-let pglite: PGlite | null = null
+let pgliteInstance: unknown = null
 let dbInstance: Db | null = null
 
 function resolveDatabaseUrl() {
@@ -28,21 +24,19 @@ export function getDb(): Db {
     const url = resolveDatabaseUrl()
 
     if (url.startsWith('pglite://')) {
-      const dataDir = decodeURIComponent(url.slice('pglite://'.length)) || undefined
-      pglite = dataDir ? new PGlite(dataDir) : new PGlite()
-      dbInstance = drizzlePglite(pglite, { schema }) as unknown as Db
-    } else {
-      pool = new Pool({ connectionString: url })
-      dbInstance = drizzleNeon({ client: pool, schema })
+      throw new Error('PGlite is only available in test mode. Use initializePglite() first.')
     }
+
+    pool = new Pool({ connectionString: url })
+    dbInstance = drizzleNeon({ client: pool, schema })
   }
   return dbInstance
 }
 
 export async function resetDbForTests() {
-  if (pglite) {
-    await pglite.close()
-    pglite = null
+  if (pgliteInstance) {
+    await (pgliteInstance as { close: () => Promise<void> }).close()
+    pgliteInstance = null
   }
 
   if (pool) {
@@ -57,9 +51,20 @@ export async function resetDbForTests() {
 }
 
 export async function initializeDbForTests() {
-  getDb()
+  const url = resolveDatabaseUrl()
 
-  if (pglite) {
-    await ensureSchemaSql((sql) => pglite!.exec(sql))
+  if (url.startsWith('pglite://')) {
+    const { PGlite } = await import('@electric-sql/pglite')
+    const { drizzle: drizzlePglite } = await import('drizzle-orm/pglite')
+    const { ensureSchemaSql } = await import('./bootstrap.js')
+
+    const dataDir = decodeURIComponent(url.slice('pglite://'.length)) || undefined
+    const pg = dataDir ? new PGlite(dataDir) : new PGlite()
+    pgliteInstance = pg
+    dbInstance = drizzlePglite(pg, { schema }) as unknown as Db
+
+    await ensureSchemaSql((sql) => pg.exec(sql))
+  } else {
+    getDb()
   }
 }
