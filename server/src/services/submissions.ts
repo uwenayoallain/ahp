@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { getDb } from '../db/connection.js'
-import { submissions, challenges, neonAuthUsersSync } from '../db/schema.js'
+import { submissions, challenges, neonAuthUsersSync, userProfiles } from '../db/schema.js'
+import { resolvedDisplayNameSql } from '../displayNames.js'
 
 type SubmissionInput = {
   userId: string
@@ -90,11 +91,12 @@ export async function getAdminSubmissionById(id: number) {
       updated_at: submissions.updatedAt,
       challenge_title: challenges.title,
       day_number: challenges.dayNumber,
-      user_name: neonAuthUsersSync.name,
+      user_name: resolvedDisplayNameSql(),
     })
     .from(submissions)
     .leftJoin(challenges, eq(challenges.id, submissions.challengeId))
     .leftJoin(neonAuthUsersSync, eq(neonAuthUsersSync.id, submissions.userId))
+    .leftJoin(userProfiles, eq(userProfiles.userId, submissions.userId))
     .where(eq(submissions.id, id))
     .limit(1)
 

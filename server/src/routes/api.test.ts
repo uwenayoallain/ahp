@@ -189,6 +189,44 @@ describe('auth', () => {
 
     expect(profile).toBeUndefined()
   })
+
+  test('GET /api/auth/me falls back to the auth sync name when the saved profile name is blank', async () => {
+    const userId = testUserId('blank-profile-name')
+    const db = getDb()
+
+    await db.insert(neonAuthUsersSync).values({
+      id: userId,
+      name: 'Synced Display Name',
+      email: 'blank-profile-name@example.com',
+    })
+
+    await db.insert(userProfiles).values({
+      userId,
+      displayName: '',
+      role: 'participant',
+    })
+
+    const res = await request(app)
+      .get('/api/auth/me')
+      .set(authHeaders(userId))
+
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({
+      userId,
+      displayName: 'Synced Display Name',
+      role: 'participant',
+      avatarUrl: '',
+      bio: '',
+      email: 'blank-profile-name@example.com',
+    })
+
+    const [profile] = await db
+      .select({ displayName: userProfiles.displayName })
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+
+    expect(profile?.displayName).toBe('Synced Display Name')
+  })
 })
 
 describe('hackathons', () => {
@@ -249,6 +287,39 @@ describe('hackathons', () => {
 })
 
 describe('team requests', () => {
+  test('GET /api/teams prefers the saved profile display name for team members', async () => {
+    const leadUserId = testUserId('lead-user')
+    const db = getDb()
+
+    await db.insert(neonAuthUsersSync).values({
+      id: leadUserId,
+      name: 'Synced Lead Name',
+      email: 'lead-user@example.com',
+    })
+
+    await db.insert(userProfiles).values({
+      userId: leadUserId,
+      displayName: 'Profile Lead Name',
+      role: 'participant',
+    })
+
+    const hackathonId = await seedHackathon()
+    await seedTeam(hackathonId, leadUserId, 'Profile Team')
+
+    const res = await request(app)
+      .get('/api/teams')
+      .set(authHeaders(leadUserId))
+
+    expect(res.status).toBe(200)
+    expect(res.body.myTeam?.members).toEqual([
+      expect.objectContaining({
+        id: leadUserId,
+        name: 'Profile Lead Name',
+        role: 'lead',
+      }),
+    ])
+  })
+
   test('participants request access instead of joining directly', async () => {
     const leadUserId = testUserId('lead-user')
     const participantUserId = testUserId('participant-user')

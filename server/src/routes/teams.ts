@@ -2,7 +2,8 @@ import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import { Router } from 'express'
 import { getActiveHackathon } from '../activeHackathon.js'
 import { getDb } from '../db/connection.js'
-import { hackathons, neonAuthUsersSync, submissions, teamJoinRequests, teamMembers, teams } from '../db/schema.js'
+import { hackathons, neonAuthUsersSync, submissions, teamJoinRequests, teamMembers, teams, userProfiles } from '../db/schema.js'
+import { resolvedDisplayNameSql } from '../displayNames.js'
 import { requireAuth } from '../middleware/auth.js'
 
 export const teamsRouter = Router()
@@ -106,12 +107,13 @@ teamsRouter.get('/', async (req, res) => {
     myTeamMembers = await db
       .select({
         id: neonAuthUsersSync.id,
-        name: neonAuthUsersSync.name,
+        name: resolvedDisplayNameSql(),
         role: teamMembers.role,
         joined_at: teamMembers.joinedAt,
       })
       .from(teamMembers)
       .innerJoin(neonAuthUsersSync, eq(neonAuthUsersSync.id, teamMembers.userId))
+      .leftJoin(userProfiles, eq(userProfiles.userId, teamMembers.userId))
       .where(eq(teamMembers.teamId, myTeam.id))
       .orderBy(asc(teamMembers.joinedAt))
 
@@ -121,13 +123,14 @@ teamsRouter.get('/', async (req, res) => {
           id: teamJoinRequests.id,
           team_id: teamJoinRequests.teamId,
           requester_user_id: teamJoinRequests.requesterUserId,
-          requester_name: neonAuthUsersSync.name,
+          requester_name: resolvedDisplayNameSql(),
           status: teamJoinRequests.status,
           message: teamJoinRequests.message,
           created_at: teamJoinRequests.createdAt,
         })
         .from(teamJoinRequests)
         .innerJoin(neonAuthUsersSync, eq(neonAuthUsersSync.id, teamJoinRequests.requesterUserId))
+        .leftJoin(userProfiles, eq(userProfiles.userId, teamJoinRequests.requesterUserId))
         .where(and(eq(teamJoinRequests.teamId, myTeam.id), eq(teamJoinRequests.status, 'pending')))
         .orderBy(desc(teamJoinRequests.createdAt))
     }
@@ -347,13 +350,14 @@ teamsRouter.get('/requests', async (req, res) => {
       .select({
         id: teamJoinRequests.id,
         requester_user_id: teamJoinRequests.requesterUserId,
-        requester_name: neonAuthUsersSync.name,
+        requester_name: resolvedDisplayNameSql(),
         status: teamJoinRequests.status,
         message: teamJoinRequests.message,
         created_at: teamJoinRequests.createdAt,
       })
       .from(teamJoinRequests)
       .innerJoin(neonAuthUsersSync, eq(neonAuthUsersSync.id, teamJoinRequests.requesterUserId))
+      .leftJoin(userProfiles, eq(userProfiles.userId, teamJoinRequests.requesterUserId))
       .where(and(eq(teamJoinRequests.teamId, membership.teamId), eq(teamJoinRequests.status, 'pending')))
       .orderBy(desc(teamJoinRequests.createdAt))
   }

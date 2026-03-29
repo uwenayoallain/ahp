@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { eq } from 'drizzle-orm'
 import { getDb } from '../db/connection.js'
 import { userProfiles, neonAuthUsersSync } from '../db/schema.js'
+import { resolveDisplayName } from '../displayNames.js'
 import { requireAuth } from '../middleware/auth.js'
 
 function isUserProfilesForeignKeyError(error: unknown) {
@@ -39,11 +40,20 @@ authRouter.get('/me', requireAuth, async (req, res) => {
 
   if (existing) {
     const [neonUser] = await db
-      .select({ email: neonAuthUsersSync.email })
+      .select({ name: neonAuthUsersSync.name, email: neonAuthUsersSync.email })
       .from(neonAuthUsersSync)
       .where(eq(neonAuthUsersSync.id, userId))
 
-    return res.json({ ...existing, email: neonUser?.email ?? '' })
+    const displayName = resolveDisplayName(existing.displayName, neonUser?.name)
+
+    if (existing.displayName === '' && displayName !== '') {
+      await db
+        .update(userProfiles)
+        .set({ displayName })
+        .where(eq(userProfiles.userId, userId))
+    }
+
+    return res.json({ ...existing, displayName, email: neonUser?.email ?? '' })
   }
 
   const [neonUser] = await db
@@ -51,7 +61,7 @@ authRouter.get('/me', requireAuth, async (req, res) => {
     .from(neonAuthUsersSync)
     .where(eq(neonAuthUsersSync.id, userId))
 
-  const displayName = neonUser?.name ?? ''
+  const displayName = resolveDisplayName(undefined, neonUser?.name)
   const profile = { userId, displayName, role: 'participant' as const, avatarUrl: '', bio: '', email: neonUser?.email ?? '' }
 
   if (neonUser) {

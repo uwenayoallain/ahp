@@ -14,6 +14,7 @@ import {
 } from '../db/schema.js'
 import { requireAdmin, requireAuth } from '../middleware/auth.js'
 import { parsePagination } from '../pagination.js'
+import { resolvedDisplayNameSql } from '../displayNames.js'
 import { getAdminSubmissionById, scoreSubmission } from '../services/submissions.js'
 
 export const adminRouter = Router()
@@ -888,11 +889,12 @@ adminRouter.get('/submissions', async (req, res) => {
       updated_at: submissions.updatedAt,
       challenge_title: challenges.title,
       day_number: challenges.dayNumber,
-      user_name: neonAuthUsersSync.name,
+      user_name: resolvedDisplayNameSql(),
     })
     .from(submissions)
     .leftJoin(challenges, eq(challenges.id, submissions.challengeId))
     .leftJoin(neonAuthUsersSync, eq(neonAuthUsersSync.id, submissions.userId))
+    .leftJoin(userProfiles, eq(userProfiles.userId, submissions.userId))
     .orderBy(desc(submissions.updatedAt))
     .limit(limit)
     .offset(offset)
@@ -924,7 +926,7 @@ adminRouter.get('/users', async (req, res) => {
   const users = await db
     .select({
       id: neonAuthUsersSync.id,
-      name: neonAuthUsersSync.name,
+      name: resolvedDisplayNameSql(),
       email: neonAuthUsersSync.email,
       role: userProfiles.role,
       modules_started: sql<number>`count(distinct ${skillProgress.moduleId})`,
@@ -933,7 +935,7 @@ adminRouter.get('/users', async (req, res) => {
     .from(neonAuthUsersSync)
     .innerJoin(userProfiles, eq(userProfiles.userId, neonAuthUsersSync.id))
     .leftJoin(skillProgress, eq(skillProgress.userId, neonAuthUsersSync.id))
-    .groupBy(neonAuthUsersSync.id, neonAuthUsersSync.name, neonAuthUsersSync.email, userProfiles.role)
+    .groupBy(neonAuthUsersSync.id, neonAuthUsersSync.name, neonAuthUsersSync.email, userProfiles.displayName, userProfiles.role)
     .orderBy(desc(neonAuthUsersSync.createdAt))
     .limit(limit)
     .offset(offset)
