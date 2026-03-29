@@ -1,18 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { EmptyState } from '../components/ui/EmptyState'
 import { PageHeader } from '../components/ui/PageHeader'
-import { apiRequest } from '../lib/api'
-
-type SkillModule = {
-  id: string
-  title: string
-  description: string
-  sort_order: number
-  progress_status: string | null
-  completed_at: string | null
-}
-
-type ModulesResponse = { items: SkillModule[] }
+import { useAppStore } from '../stores/app-store'
 
 function progressPercent(status: string | null) {
   if (status === 'completed') return 100
@@ -27,29 +16,14 @@ function progressLabel(status: string | null) {
 }
 
 export function SkillModulesPage() {
-  const [modules, setModules] = useState<SkillModule[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const { data: modules, loading, error, fetchedAt } = useAppStore((s) => s.skillModules)
+  const fetchSkillModules = useAppStore((s) => s.fetchSkillModules)
 
   useEffect(() => {
-    let cancelled = false
+    void fetchSkillModules()
+  }, [fetchSkillModules])
 
-    async function load() {
-      try {
-        const data = await apiRequest<ModulesResponse>('/api/skill-modules')
-        if (!cancelled) setModules(data.items)
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load skill tracks')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-
-    void load()
-    return () => { cancelled = true }
-  }, [])
-
-  if (loading) {
+  if (loading && fetchedAt === 0) {
     return (
       <>
         <PageHeader title="Skill Tracks" subtitle="Optional prep modules to sharpen skills used in daily challenges." />
@@ -58,7 +32,7 @@ export function SkillModulesPage() {
     )
   }
 
-  if (error) {
+  if (error && fetchedAt === 0) {
     return (
       <>
         <PageHeader title="Skill Tracks" subtitle="Optional prep modules to sharpen skills used in daily challenges." />

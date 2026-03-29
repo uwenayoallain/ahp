@@ -1,55 +1,24 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { Markdown } from '../components/ui/Markdown'
 import { PageHeader } from '../components/ui/PageHeader'
-import { apiRequest } from '../lib/api'
 import { formatDateTime, statusBadgeClass, statusLabel } from '../lib/format'
-
-type SubmissionDetail = {
-  id: number
-  project_title: string
-  description: string
-  team_name: string
-  category: string
-  status: string
-  score: number | null
-  challenge_title: string | null
-  challenge_id: number | null
-  day_number: number | null
-  created_at: string
-  updated_at: string
-}
+import { useAppStore } from '../stores/app-store'
 
 export function SubmissionDetailPage() {
   const { id } = useParams()
-  const [submission, setSubmission] = useState<SubmissionDetail | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const fetchSubmissionDetail = useAppStore((s) => s.fetchSubmissionDetail)
+  const entry = useAppStore((s) => s.submissionDetails[id ?? ''])
+  const submission = entry?.data ?? null
+  const loading = entry?.loading ?? true
+  const error = entry?.error ?? ''
+  const fetchedAt = entry?.fetchedAt ?? 0
 
   useEffect(() => {
-    let cancelled = false
+    if (id) void fetchSubmissionDetail(id)
+  }, [id, fetchSubmissionDetail])
 
-    async function load() {
-      try {
-        const data = await apiRequest<SubmissionDetail>(`/api/submissions/${id}`)
-        if (!cancelled) {
-          setSubmission(data)
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load submission')
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
-      }
-    }
-
-    void load()
-    return () => { cancelled = true }
-  }, [id])
-
-  if (loading) {
+  if (loading && fetchedAt === 0) {
     return (
       <>
         <PageHeader title="Submission" subtitle="" />
@@ -85,7 +54,7 @@ export function SubmissionDetailPage() {
       <section className="detail-grid">
         <article className="card">
           <h3>Description</h3>
-          <p className="text-prewrap">{submission.description}</p>
+          <Markdown content={submission.description} />
         </article>
 
         <article className="card">

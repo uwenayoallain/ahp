@@ -1,68 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { EmptyState } from '../components/ui/EmptyState'
 import { PageHeader } from '../components/ui/PageHeader'
 import { StatCard } from '../components/ui/StatCard'
-import { apiRequest } from '../lib/api'
 import { formatDateTime, formatShortDate } from '../lib/format'
-
-type DashboardStats = {
-  submissionCount: number
-  totalScore: number
-  rank: number | null
-  teamName: string | null
-  completedModules: number
-  totalModules: number
-}
-
-type ActiveHackathon = {
-  id: number
-  name: string
-  slug: string
-  description: string
-  start_date: string
-  end_date: string
-}
-
-type Challenge = {
-  id: number
-  day_number: number
-  title: string
-  slug: string
-  difficulty: string
-  summary: string
-  max_points: number
-  unlock_at: string
-  submission_deadline_at: string | null
-}
-
-type ScheduleEvent = {
-  id: number
-  day_number: number
-  time: string
-  title: string
-  venue: string
-  sort_order: number
-}
-
-type ChallengesResponse = {
-  items: Challenge[]
-}
-
-type ScheduleResponse = {
-  items: ScheduleEvent[]
-}
-
-type HomeData = {
-  stats: DashboardStats
-  hackathon: ActiveHackathon | null
-  challenges: Challenge[]
-  schedule: ScheduleEvent[]
-}
-
-type FocusItem = {
-  title: string
-  body: string
-}
+import { useAppStore } from '../stores/app-store'
+import type { ActiveHackathon, Challenge, DashboardStats, ScheduleEvent } from '../stores/app-store'
 
 function defaultStats(): DashboardStats {
   return {
@@ -168,6 +110,11 @@ function nextTimelineItems(hackathon: ActiveHackathon | null, schedule: Schedule
   return items.slice(0, 4)
 }
 
+type FocusItem = {
+  title: string
+  body: string
+}
+
 function createFocusItems(stats: DashboardStats, hackathon: ActiveHackathon | null, challenges: Challenge[]): FocusItem[] {
   const items: FocusItem[] = []
 
@@ -214,40 +161,25 @@ function createFocusItems(stats: DashboardStats, hackathon: ActiveHackathon | nu
 }
 
 export function HomePage() {
-  const [data, setData] = useState<HomeData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const hackathonState = useAppStore((s) => s.hackathon)
+  const challengesState = useAppStore((s) => s.challenges)
+  const scheduleState = useAppStore((s) => s.schedule)
+  const statsState = useAppStore((s) => s.stats)
+  const fetchHackathon = useAppStore((s) => s.fetchHackathon)
+  const fetchChallenges = useAppStore((s) => s.fetchChallenges)
+  const fetchSchedule = useAppStore((s) => s.fetchSchedule)
+  const fetchStats = useAppStore((s) => s.fetchStats)
 
   useEffect(() => {
-    let cancelled = false
+    void fetchHackathon()
+    void fetchChallenges()
+    void fetchSchedule()
+    void fetchStats()
+  }, [fetchHackathon, fetchChallenges, fetchSchedule, fetchStats])
 
-    async function load() {
-      try {
-        const [stats, hackathon, challenges, schedule] = await Promise.all([
-          apiRequest<DashboardStats>('/api/me/stats'),
-          apiRequest<ActiveHackathon | null>('/api/hackathons/active', { fallbackData: null }),
-          apiRequest<ChallengesResponse>('/api/challenges', { fallbackData: { items: [] } }),
-          apiRequest<ScheduleResponse>('/api/schedule', { fallbackData: { items: [] } }),
-        ])
-
-        if (!cancelled) {
-          setData({
-            stats,
-            hackathon,
-            challenges: challenges.items,
-            schedule: schedule.items,
-          })
-        }
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load dashboard')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-
-    void load()
-    return () => { cancelled = true }
-  }, [])
+  const loading = (hackathonState.loading || challengesState.loading || scheduleState.loading || statsState.loading)
+    && hackathonState.fetchedAt === 0
+  const error = statsState.error || hackathonState.error
 
   if (loading) {
     return (
@@ -258,7 +190,7 @@ export function HomePage() {
     )
   }
 
-  if (error) {
+  if (error && statsState.fetchedAt === 0) {
     return (
       <>
         <PageHeader title="Dashboard" subtitle="Current event, upcoming sessions, and your working progress." />
@@ -267,10 +199,10 @@ export function HomePage() {
     )
   }
 
-  const stats = data?.stats ?? defaultStats()
-  const hackathon = data?.hackathon ?? null
-  const challenges = data?.challenges ?? []
-  const timeline = data?.schedule ?? []
+  const stats = statsState.data ?? defaultStats()
+  const hackathon = hackathonState.data
+  const challenges = challengesState.data
+  const timeline = scheduleState.data
   const overviewState = hackathon ? eventState(hackathon) : null
   const nextItems = nextTimelineItems(hackathon, timeline)
   const focusItems = createFocusItems(stats, hackathon, challenges)
@@ -365,7 +297,7 @@ export function HomePage() {
       <section className="home-columns">
         <article className="panel-surface table-panel">
           <div className="home-section-head">
-            <h3>What’s happening</h3>
+            <h3>What's happening</h3>
             <p>Upcoming online sessions and deadlines from the active event timeline.</p>
           </div>
 

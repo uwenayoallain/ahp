@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { MarkdownEditor } from '../../components/ui/MarkdownEditor'
 import { PageHeader } from '../../components/ui/PageHeader'
 import {
   activateAdminHackathon,
@@ -632,9 +633,11 @@ export function AdminHackathonsPage() {
           </label>
           <label>
             Description
-            <textarea
+            <MarkdownEditor
               value={hackathonForm.description}
-              onChange={(event) => setHackathonForm((prev) => ({ ...prev, description: event.target.value }))}
+              onChange={(value) => setHackathonForm((prev) => ({ ...prev, description: value }))}
+              placeholder="Event description (supports markdown)"
+              rows={6}
             />
           </label>
         </div>
@@ -727,19 +730,21 @@ export function AdminHackathonsPage() {
               </label>
               <label>
                 Description
-                <textarea
+                <MarkdownEditor
                   value={challengeForm.description}
-                  onChange={(event) => setChallengeForm((prev) => ({ ...prev, description: event.target.value }))}
+                  onChange={(value) => setChallengeForm((prev) => ({ ...prev, description: value }))}
+                  placeholder="Challenge description (supports markdown)"
                 />
               </label>
               <label>
                 Setup instructions
-                <textarea
+                <MarkdownEditor
                   value={challengeForm.setupInstructions}
-                  onChange={(event) => setChallengeForm((prev) => ({
+                  onChange={(value) => setChallengeForm((prev) => ({
                     ...prev,
-                    setupInstructions: event.target.value,
+                    setupInstructions: value,
                   }))}
+                  placeholder="Setup instructions (supports markdown)"
                 />
               </label>
               <label>
@@ -904,9 +909,10 @@ export function AdminHackathonsPage() {
               </label>
               <label>
                 Body
-                <textarea
+                <MarkdownEditor
                   value={ruleForm.body}
-                  onChange={(event) => setRuleForm((prev) => ({ ...prev, body: event.target.value }))}
+                  onChange={(value) => setRuleForm((prev) => ({ ...prev, body: value }))}
+                  placeholder="Rule content (supports markdown)"
                 />
               </label>
             </div>
@@ -982,9 +988,11 @@ export function AdminHackathonsPage() {
               </label>
               <label>
                 Description
-                <textarea
+                <MarkdownEditor
                   value={skillModuleForm.description}
-                  onChange={(event) => setSkillModuleForm((prev) => ({ ...prev, description: event.target.value }))}
+                  onChange={(value) => setSkillModuleForm((prev) => ({ ...prev, description: value }))}
+                  placeholder="Module description (supports markdown)"
+                  rows={4}
                 />
               </label>
             </div>

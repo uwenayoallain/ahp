@@ -1,31 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { Markdown } from '../components/ui/Markdown'
 import { PageHeader } from '../components/ui/PageHeader'
-import { apiRequest } from '../lib/api'
 import { formatDateTime } from '../lib/format'
+import { useAppStore } from '../stores/app-store'
+import type { ChallengeDetail } from '../stores/app-store'
 
-type Resource = {
-  label: string
-  url: string
-}
-
-type Challenge = {
-  id: number
-  hackathon_id: number
-  day_number: number
-  title: string
-  slug: string
-  difficulty: string
-  summary: string
-  description: string
-  setup_instructions: string
-  resources: Resource[]
-  max_points: number
-  unlock_at: string
-  submission_deadline_at: string | null
-}
-
-function challengeAvailability(challenge: Challenge) {
+function challengeAvailability(challenge: ChallengeDetail) {
   const now = Date.now()
   const unlockAt = new Date(challenge.unlock_at).getTime()
   const deadlineAt = challenge.submission_deadline_at ? new Date(challenge.submission_deadline_at).getTime() : null
@@ -57,31 +38,18 @@ function challengeAvailability(challenge: Challenge) {
 
 export function ChallengeDetailPage() {
   const { slug } = useParams<{ slug: string }>()
-  const [challenge, setChallenge] = useState<Challenge | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const fetchChallengeDetail = useAppStore((s) => s.fetchChallengeDetail)
+  const entry = useAppStore((s) => s.challengeDetails[slug ?? ''])
+  const challenge = entry?.data ?? null
+  const loading = entry?.loading ?? true
+  const error = entry?.error ?? ''
+  const fetchedAt = entry?.fetchedAt ?? 0
 
   useEffect(() => {
-    let cancelled = false
+    if (slug) void fetchChallengeDetail(slug)
+  }, [slug, fetchChallengeDetail])
 
-    async function load() {
-      try {
-        const data = await apiRequest<Challenge>(`/api/challenges/${slug}`)
-        if (!cancelled) setChallenge(data)
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load challenge')
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-
-    void load()
-    return () => { cancelled = true }
-  }, [slug])
-
-  if (loading) {
+  if (loading && fetchedAt === 0) {
     return (
       <>
         <PageHeader title="Challenge" subtitle="" />
@@ -119,15 +87,13 @@ export function ChallengeDetailPage() {
 
       <article className="card">
         <h3>Description</h3>
-        <p className="text-prewrap">{challenge.description}</p>
+        <Markdown content={challenge.description} />
       </article>
 
       {challenge.setup_instructions && (
         <article className="card">
           <h3>Setup Instructions</h3>
-          <pre className="code-block">
-            {challenge.setup_instructions}
-          </pre>
+          <Markdown content={challenge.setup_instructions} />
         </article>
       )}
 

@@ -1,41 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
+import { Markdown } from '../components/ui/Markdown'
 import { EmptyState } from '../components/ui/EmptyState'
 import { PageHeader } from '../components/ui/PageHeader'
-import { apiRequest } from '../lib/api'
-
-type Rule = {
-  id: number
-  title: string
-  body: string
-  sort_order: number
-}
-
-type RulesResponse = { items: Rule[] }
+import { useAppStore } from '../stores/app-store'
 
 export function RulesPage() {
-  const [rules, setRules] = useState<Rule[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const { data: rules, loading, error, fetchedAt } = useAppStore((s) => s.rules)
+  const fetchRules = useAppStore((s) => s.fetchRules)
 
   useEffect(() => {
-    let cancelled = false
+    void fetchRules()
+  }, [fetchRules])
 
-    async function load() {
-      try {
-        const data = await apiRequest<RulesResponse>('/api/rules')
-        if (!cancelled) setRules(data.items)
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load rules')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-
-    void load()
-    return () => { cancelled = true }
-  }, [])
-
-  if (loading) {
+  if (loading && fetchedAt === 0) {
     return (
       <>
         <PageHeader title="Rules" subtitle="Participation guidelines, submission requirements, and fair play policy." />
@@ -44,7 +21,7 @@ export function RulesPage() {
     )
   }
 
-  if (error) {
+  if (error && fetchedAt === 0) {
     return (
       <>
         <PageHeader title="Rules" subtitle="Participation guidelines, submission requirements, and fair play policy." />
@@ -73,7 +50,7 @@ export function RulesPage() {
               <summary>
                 <strong>{rule.title}</strong>
               </summary>
-              <p>{rule.body}</p>
+              <Markdown content={rule.body} />
             </details>
           ))}
         </section>

@@ -1,27 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { DataTable } from '../components/ui/DataTable'
 import { EmptyState } from '../components/ui/EmptyState'
 import { PageHeader } from '../components/ui/PageHeader'
-import { apiRequest } from '../lib/api'
 import { formatShortDate, statusBadgeClass, statusLabel } from '../lib/format'
-
-type Submission = {
-  id: number
-  team_name: string
-  project_title: string
-  category: string
-  status: string
-  score: number | null
-  challenge_title: string | null
-  day_number: number | null
-  created_at: string
-  updated_at: string
-}
-
-type SubmissionsResponse = {
-  items: Submission[]
-}
+import { useAppStore } from '../stores/app-store'
+import type { Submission } from '../stores/app-store'
 
 const columns = [
   {
@@ -60,34 +44,14 @@ const columns = [
 ]
 
 export function MySubmissionsPage() {
-  const [submissions, setSubmissions] = useState<Submission[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const { data: submissions, loading, error, fetchedAt } = useAppStore((s) => s.submissions)
+  const fetchSubmissions = useAppStore((s) => s.fetchSubmissions)
 
   useEffect(() => {
-    let cancelled = false
+    void fetchSubmissions()
+  }, [fetchSubmissions])
 
-    async function load() {
-      try {
-        const data = await apiRequest<SubmissionsResponse>('/api/submissions')
-        if (!cancelled) {
-          setSubmissions(data.items)
-        }
-      } catch (err) {
-        if (!cancelled) {
-          const message = err instanceof Error ? err.message : 'Failed to load submissions'
-          setError(message)
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
-      }
-    }
-
-    void load()
-    return () => { cancelled = true }
-  }, [])
+  const isFirstLoad = loading && fetchedAt === 0
 
   return (
     <>
@@ -96,10 +60,10 @@ export function MySubmissionsPage() {
         subtitle="Your challenge solutions and their current status."
       />
 
-      {loading && <p className="status-text">Loading submissions...</p>}
-      {error && <p className="feedback feedback--error">{error}</p>}
+      {isFirstLoad && <p className="status-text">Loading submissions...</p>}
+      {error && fetchedAt === 0 && <p className="feedback feedback--error">{error}</p>}
 
-      {!loading && !error && submissions.length === 0 && (
+      {!isFirstLoad && !error && submissions.length === 0 && (
         <EmptyState
           title="No submissions yet"
           message="You have not submitted a challenge solution yet."
@@ -112,7 +76,7 @@ export function MySubmissionsPage() {
         />
       )}
 
-      {!loading && submissions.length > 0 && (
+      {submissions.length > 0 && (
         <DataTable
           columns={columns}
           data={submissions}

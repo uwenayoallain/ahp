@@ -2,31 +2,9 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { EmptyState } from '../components/ui/EmptyState'
 import { PageHeader } from '../components/ui/PageHeader'
-import { apiRequest } from '../lib/api'
 import { formatDateTime } from '../lib/format'
-
-type Challenge = {
-  id: number
-  day_number: number
-  title: string
-  slug: string
-  difficulty: string
-  summary: string
-  max_points: number
-  unlock_at: string
-  submission_deadline_at: string | null
-}
-
-type ScheduleEvent = {
-  id: number
-  day_number: number
-  time: string
-  title: string
-  venue: string
-}
-
-type ChallengesResponse = { items: Challenge[] }
-type ScheduleResponse = { items: ScheduleEvent[] }
+import { useAppStore } from '../stores/app-store'
+import type { Challenge } from '../stores/app-store'
 
 function challengeState(challenge: Challenge) {
   const now = Date.now()
@@ -59,47 +37,33 @@ function challengeState(challenge: Challenge) {
 }
 
 export function SchedulePage() {
-  const [challenges, setChallenges] = useState<Challenge[]>([])
-  const [events, setEvents] = useState<ScheduleEvent[]>([])
+  const challengesState = useAppStore((s) => s.challenges)
+  const eventsState = useAppStore((s) => s.schedule)
+  const fetchChallenges = useAppStore((s) => s.fetchChallenges)
+  const fetchSchedule = useAppStore((s) => s.fetchSchedule)
   const [selectedDay, setSelectedDay] = useState<number | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
 
   useEffect(() => {
-    let cancelled = false
+    void fetchChallenges()
+    void fetchSchedule()
+  }, [fetchChallenges, fetchSchedule])
 
-    async function load() {
-      try {
-        const [cData, sData] = await Promise.all([
-          apiRequest<ChallengesResponse>('/api/challenges'),
-          apiRequest<ScheduleResponse>('/api/schedule'),
-        ])
-        if (!cancelled) {
-          setChallenges(cData.items)
-          setEvents(sData.items)
-          const availableDays = [...new Set([
-            ...cData.items.map((challenge) => challenge.day_number),
-            ...sData.items.map((event) => event.day_number),
-          ])].sort((a, b) => a - b)
-          setSelectedDay(availableDays[0] ?? null)
-        }
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load schedule')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
+  const challenges = challengesState.data
+  const events = eventsState.data
 
-    void load()
-    return () => { cancelled = true }
-  }, [])
+  const loading = (challengesState.loading || eventsState.loading) && challengesState.fetchedAt === 0
+  const error = challengesState.error || eventsState.error
 
   const days = [...new Set([
     ...challenges.map((challenge) => challenge.day_number),
     ...events.map((event) => event.day_number),
   ])].sort((a, b) => a - b)
-  const dayEvents = events.filter((e) => e.day_number === selectedDay)
-  const dayChallenge = challenges.find((c) => c.day_number === selectedDay)
+
+  const effectiveDay = selectedDay !== null && days.includes(selectedDay)
+    ? selectedDay
+    : days[0] ?? null
+  const dayEvents = events.filter((e) => e.day_number === effectiveDay)
+  const dayChallenge = challenges.find((c) => c.day_number === effectiveDay)
 
   if (loading) {
     return (
@@ -110,7 +74,7 @@ export function SchedulePage() {
     )
   }
 
-  if (error) {
+  if (error && challengesState.fetchedAt === 0) {
     return (
       <>
         <PageHeader title="Challenges" subtitle="Daily challenge timeline, online sessions, and submission deadlines." />
@@ -138,7 +102,7 @@ export function SchedulePage() {
             {days.map((day) => (
               <button
                 key={day}
-                className={`btn ${selectedDay === day ? 'primary' : 'secondary'}`}
+                className={`btn ${effectiveDay === day ? 'primary' : 'secondary'}`}
                 type="button"
                 onClick={() => setSelectedDay(day)}
               >
@@ -160,7 +124,7 @@ export function SchedulePage() {
             </Link>
           ) : (
             <EmptyState
-              title={`Day ${selectedDay} has no challenge brief`}
+              title={`Day ${effectiveDay} has no challenge brief`}
               message="This day is on the schedule, but a challenge has not been published yet."
             />
           )}
@@ -179,7 +143,7 @@ export function SchedulePage() {
             </section>
           ) : (
             <EmptyState
-              title={`Day ${selectedDay} has no published sessions`}
+              title={`Day ${effectiveDay} has no published sessions`}
               message="No online events or checkpoints have been added for this day yet."
             />
           )}

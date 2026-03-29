@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { Markdown } from '../../components/ui/Markdown'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { formatDateTime } from '../../lib/format'
 import { fetchAdminSubmission, scoreSubmission } from './adminApi'
@@ -88,6 +89,11 @@ export function AdminSubmissionDetailPage() {
           </div>
         }
       />
+
+      <article className="card">
+        <h3>Description</h3>
+        <Markdown content={record.description} />
+      </article>
 
       <section className="detail-grid">
         <article className="card">

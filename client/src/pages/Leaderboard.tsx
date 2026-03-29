@@ -1,71 +1,47 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { DataTable } from '../components/ui/DataTable'
 import { EmptyState } from '../components/ui/EmptyState'
 import { PageHeader } from '../components/ui/PageHeader'
-import { apiRequest } from '../lib/api'
-
-type TeamScore = {
-  id: number
-  name: string
-  member_count: number
-  total_score: number
-  submission_count: number
-}
-
-type LeaderboardResponse = { items: TeamScore[] }
+import { useAppStore } from '../stores/app-store'
+import type { LeaderboardEntry } from '../stores/app-store'
 
 const columns = [
   {
     key: 'rank',
     header: '#',
-    render: (_row: TeamScore, index: number) => index + 1,
+    render: (_row: LeaderboardEntry, index: number) => index + 1,
   },
   {
     key: 'name',
     header: 'Team',
-    render: (row: TeamScore) => <strong>{row.name}</strong>,
+    render: (row: LeaderboardEntry) => <strong>{row.name}</strong>,
   },
   {
     key: 'members',
     header: 'Members',
-    render: (row: TeamScore) => row.member_count,
+    render: (row: LeaderboardEntry) => row.member_count,
   },
   {
     key: 'submissions',
     header: 'Submissions',
-    render: (row: TeamScore) => row.submission_count,
+    render: (row: LeaderboardEntry) => row.submission_count,
   },
   {
     key: 'score',
     header: 'Score',
-    render: (row: TeamScore) => <strong>{row.total_score}</strong>,
+    render: (row: LeaderboardEntry) => <strong>{row.total_score}</strong>,
   },
 ]
 
 export function LeaderboardPage() {
-  const [teams, setTeams] = useState<TeamScore[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const { data: teams, loading, error, fetchedAt } = useAppStore((s) => s.leaderboard)
+  const fetchLeaderboard = useAppStore((s) => s.fetchLeaderboard)
 
   useEffect(() => {
-    let cancelled = false
+    void fetchLeaderboard()
+  }, [fetchLeaderboard])
 
-    async function load() {
-      try {
-        const data = await apiRequest<LeaderboardResponse>('/api/leaderboard')
-        if (!cancelled) setTeams(data.items)
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load leaderboard')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-
-    void load()
-    return () => { cancelled = true }
-  }, [])
-
-  if (loading) {
+  if (loading && fetchedAt === 0) {
     return (
       <>
         <PageHeader title="Leaderboard" subtitle="Team rankings by total score." />
@@ -74,7 +50,7 @@ export function LeaderboardPage() {
     )
   }
 
-  if (error) {
+  if (error && fetchedAt === 0) {
     return (
       <>
         <PageHeader title="Leaderboard" subtitle="Team rankings by total score." />

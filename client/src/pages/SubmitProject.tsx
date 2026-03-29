@@ -7,35 +7,15 @@ import { apiRequest } from '../lib/api'
 import { addSubmission } from '../lib/db'
 import { formatDateTime, formatShortDate } from '../lib/format'
 import { queueSubmissionSync, requestBackgroundSync } from '../lib/sync'
-
-type ActiveHackathon = {
-  id: number
-  name: string
-  description: string
-  start_date: string
-  end_date: string
-}
-
-type Challenge = {
-  id: number
-  day_number: number
-  title: string
-  slug: string
-  difficulty: string
-  summary: string
-  max_points: number
-  unlock_at: string
-  submission_deadline_at: string | null
-}
+import { useAppStore } from '../stores/app-store'
+import type { Challenge } from '../stores/app-store'
 
 type MyTeam = {
   id: number
   name: string
 }
 
-type ChallengesResponse = { items: Challenge[] }
 type TeamsResponse = { items: unknown[]; myTeam: MyTeam | null }
-type CategoriesResponse = { items: string[] }
 
 type FormState = {
   challengeId: string
@@ -132,60 +112,61 @@ function hasSubmissionMaterials(state: FormState) {
 }
 
 export function SubmitProjectPage() {
+  const hackathonState = useAppStore((s) => s.hackathon)
+  const challengesState = useAppStore((s) => s.challenges)
+  const categoriesState = useAppStore((s) => s.categories)
+  const fetchHackathon = useAppStore((s) => s.fetchHackathon)
+  const fetchChallenges = useAppStore((s) => s.fetchChallenges)
+  const fetchCategories = useAppStore((s) => s.fetchCategories)
+  const invalidate = useAppStore((s) => s.invalidate)
+
   const [step, setStep] = useState(1)
   const [state, setState] = useState<FormState>(initialState)
   const [message, setMessage] = useState('')
   const [loadError, setLoadError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [hackathon, setHackathon] = useState<ActiveHackathon | null>(null)
-  const [challenges, setChallenges] = useState<Challenge[]>([])
   const [myTeam, setMyTeam] = useState<MyTeam | null>(null)
-  const [categories, setCategories] = useState<string[]>([])
+  const [teamLoading, setTeamLoading] = useState(true)
 
   useEffect(() => {
+    void fetchHackathon()
+    void fetchChallenges()
+    void fetchCategories()
+
     let cancelled = false
-
-    async function load() {
+    async function loadTeam() {
       try {
-        const [hackathonData, challengeData, teamData, categoryData] = await Promise.all([
-          apiRequest<ActiveHackathon | null>('/api/hackathons/active', { fallbackData: null }),
-          apiRequest<ChallengesResponse>('/api/challenges', { fallbackData: { items: [] } }),
-          apiRequest<TeamsResponse>('/api/teams', { fallbackData: { items: [], myTeam: null } }),
-          apiRequest<CategoriesResponse>('/api/submissions/categories', { fallbackData: { items: [] } }),
-        ])
-
-        if (cancelled) {
-          return
-        }
-
-        const nextCategories = categoryData.items.length > 0 ? categoryData.items : fallbackCategories
-        const firstAvailableChallenge = challengeData.items.find((item) => challengeAvailability(item).blocked === false)
-
-        setHackathon(hackathonData)
-        setChallenges(challengeData.items)
-        setMyTeam(teamData.myTeam)
-        setCategories(nextCategories)
-        setState((prev) => ({
-          ...prev,
-          category: prev.category || nextCategories[0] || '',
-          challengeId: prev.challengeId || (firstAvailableChallenge ? String(firstAvailableChallenge.id) : ''),
-        }))
-      } catch (err) {
-        if (!cancelled) {
-          console.error('[SubmitProject] Failed to load form data', err)
-          setLoadError(err instanceof Error ? err.message : 'Failed to load submission requirements')
-        }
+        const data = await apiRequest<TeamsResponse>('/api/teams', { fallbackData: { items: [], myTeam: null } })
+        if (!cancelled) setMyTeam(data.myTeam)
+      } catch {
+        // ignore
       } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
+        if (!cancelled) setTeamLoading(false)
       }
     }
-
-    void load()
+    void loadTeam()
     return () => { cancelled = true }
-  }, [])
+  }, [fetchHackathon, fetchChallenges, fetchCategories])
+
+  const hackathon = hackathonState.data
+  const challenges = challengesState.data
+  const categories = categoriesState.data.length > 0 ? categoriesState.data : fallbackCategories
+  const loading = (hackathonState.loading && hackathonState.fetchedAt === 0)
+    || (challengesState.loading && challengesState.fetchedAt === 0)
+    || teamLoading
+
+  useEffect(() => {
+    if (state.category === '' && categories.length > 0) {
+      setState((prev) => ({ ...prev, category: categories[0] }))
+    }
+  }, [categories, state.category])
+
+  useEffect(() => {
+    if (state.challengeId === '' && challenges.length > 0) {
+      const first = challenges.find((item) => challengeAvailability(item).blocked === false)
+      if (first) setState((prev) => ({ ...prev, challengeId: String(first.id) }))
+    }
+  }, [challenges, state.challengeId])
 
   const selectedChallenge = challenges.find((challenge) => String(challenge.id) === state.challengeId) ?? null
   const selectedAvailability = selectedChallenge ? challengeAvailability(selectedChallenge) : null
@@ -240,6 +221,7 @@ export function SubmitProjectPage() {
       })
       await requestBackgroundSync()
 
+      invalidate('submissions')
       setMessage('Submission received. Review status and scoring from My Submissions.')
       setState({
         ...initialState,
