@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { EmptyState } from '../../components/ui/EmptyState'
 import { PageHeader } from '../../components/ui/PageHeader'
 import {
   activateAdminHackathon,
@@ -493,58 +494,68 @@ export function AdminHackathonsPage() {
 
       <section className="panel-surface table-panel">
         <h3>Hackathon Catalog</h3>
-        <div className="table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Dates</th>
-                <th>Teams</th>
-                <th>Late policy</th>
-                <th>Status</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {hackathons.map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn secondary"
-                      onClick={() => setSelectedHackathonId(item.id)}
-                    >
-                      {item.name}
-                    </button>
-                  </td>
-                  <td>{new Date(item.startDate).toLocaleDateString()} to {new Date(item.endDate).toLocaleDateString()}</td>
-                  <td>{item.teamSizeMin} - {item.teamSizeMax}</td>
-                  <td>{item.latePolicy === 'reject' ? 'Reject' : `${item.latePenaltyPercentPerHour}% / hr`}</td>
-                  <td>
-                    <span className={item.isActive ? 'badge badge--success' : 'badge badge--neutral'}>
-                      {item.isActive ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td>
-                    {!item.isActive && (
+        {hackathons.length === 0 ? (
+          <EmptyState
+            title="No hackathons yet"
+            message="Create the first hackathon to publish schedules, challenges, rules, and skill tracks."
+          />
+        ) : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Dates</th>
+                  <th>Teams</th>
+                  <th>Late policy</th>
+                  <th>Status</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {hackathons.map((item) => (
+                  <tr key={item.id}>
+                    <td>
                       <button
                         type="button"
                         className="btn secondary"
-                        onClick={() => void handleActivateHackathon(item.id)}
+                        onClick={() => setSelectedHackathonId(item.id)}
                       >
-                        Activate
+                        {item.name}
                       </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </td>
+                    <td>{new Date(item.startDate).toLocaleDateString()} to {new Date(item.endDate).toLocaleDateString()}</td>
+                    <td>{item.teamSizeMin} - {item.teamSizeMax}</td>
+                    <td>{item.latePolicy === 'reject' ? 'Reject' : `${item.latePenaltyPercentPerHour}% / hr`}</td>
+                    <td>
+                      <span className={item.isActive ? 'badge badge--success' : 'badge badge--neutral'}>
+                        {item.isActive ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td>
+                      {!item.isActive && (
+                        <button
+                          type="button"
+                          className="btn secondary"
+                          onClick={() => void handleActivateHackathon(item.id)}
+                        >
+                          Activate
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       <section className="panel-surface table-panel">
         <h3>{selectedHackathon ? `Edit ${selectedHackathon.name}` : 'Create Hackathon'}</h3>
+        <p className="status-text">
+          Set the active hackathon dates so the participant app shows the event as upcoming, live, or completed. To keep the platform on day 1, make the active hackathon start today.
+        </p>
         <div className="form-grid">
           <label>
             Name
@@ -745,36 +756,43 @@ export function AdminHackathonsPage() {
               </button>
             </div>
             <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Day</th>
-                    <th>Title</th>
-                    <th>Availability</th>
-                    <th>Points</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {challenges.map((item) => (
-                    <tr key={item.id}>
-                      <td>{item.dayNumber}</td>
-                      <td>{item.title}</td>
-                      <td>{formatDateValue(item.unlockAt)} / {formatDateValue(item.submissionDeadlineAt)}</td>
-                      <td>{item.maxPoints}</td>
-                      <td>
-                        <button
-                          type="button"
-                          className="btn danger"
-                          onClick={() => void handleDeleteChallenge(item.id)}
-                        >
-                          Delete
-                        </button>
-                      </td>
+              {challenges.length === 0 ? (
+                <EmptyState
+                  title="No challenges yet"
+                  message="Add the day briefs and submission windows for this hackathon."
+                />
+              ) : (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Day</th>
+                      <th>Title</th>
+                      <th>Availability</th>
+                      <th>Points</th>
+                      <th />
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {challenges.map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.dayNumber}</td>
+                        <td>{item.title}</td>
+                        <td>{formatDateValue(item.unlockAt)} / {formatDateValue(item.submissionDeadlineAt)}</td>
+                        <td>{item.maxPoints}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn danger"
+                            onClick={() => void handleDeleteChallenge(item.id)}
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </section>
 
@@ -805,7 +823,7 @@ export function AdminHackathonsPage() {
                 />
               </label>
               <label>
-                Venue
+                Channel
                 <input
                   value={scheduleForm.venue}
                   onChange={(event) => setScheduleForm((prev) => ({ ...prev, venue: event.target.value }))}
@@ -826,36 +844,43 @@ export function AdminHackathonsPage() {
               </button>
             </div>
             <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Day</th>
-                    <th>Time</th>
-                    <th>Title</th>
-                    <th>Venue</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {schedule.map((item) => (
-                    <tr key={item.id}>
-                      <td>{item.dayNumber}</td>
-                      <td>{item.time}</td>
-                      <td>{item.title}</td>
-                      <td>{item.venue || '--'}</td>
-                      <td>
-                        <button
-                          type="button"
-                          className="btn danger"
-                          onClick={() => void handleDeleteScheduleEvent(item.id)}
-                        >
-                          Delete
-                        </button>
-                      </td>
+              {schedule.length === 0 ? (
+                <EmptyState
+                  title="No schedule items yet"
+                  message="Add online sessions, unlock checkpoints, and review windows for this hackathon."
+                />
+              ) : (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Day</th>
+                      <th>Time</th>
+                      <th>Title</th>
+                      <th>Channel</th>
+                      <th />
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {schedule.map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.dayNumber}</td>
+                        <td>{item.time}</td>
+                        <td>{item.title}</td>
+                        <td>{item.venue || '--'}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn danger"
+                            onClick={() => void handleDeleteScheduleEvent(item.id)}
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </section>
 
@@ -891,34 +916,41 @@ export function AdminHackathonsPage() {
               </button>
             </div>
             <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Order</th>
-                    <th>Title</th>
-                    <th>Body</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {rules.map((item) => (
-                    <tr key={item.id}>
-                      <td>{item.sortOrder}</td>
-                      <td>{item.title}</td>
-                      <td>{item.body}</td>
-                      <td>
-                        <button
-                          type="button"
-                          className="btn danger"
-                          onClick={() => void handleDeleteRule(item.id)}
-                        >
-                          Delete
-                        </button>
-                      </td>
+              {rules.length === 0 ? (
+                <EmptyState
+                  title="No rules yet"
+                  message="Add participation guidance and submission requirements for this hackathon."
+                />
+              ) : (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Order</th>
+                      <th>Title</th>
+                      <th>Body</th>
+                      <th />
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {rules.map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.sortOrder}</td>
+                        <td>{item.title}</td>
+                        <td>{item.body}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn danger"
+                            onClick={() => void handleDeleteRule(item.id)}
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </section>
 
@@ -962,34 +994,41 @@ export function AdminHackathonsPage() {
               </button>
             </div>
             <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Order</th>
-                    <th>Id</th>
-                    <th>Title</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {skillModules.map((item) => (
-                    <tr key={item.id}>
-                      <td>{item.sortOrder}</td>
-                      <td>{item.id}</td>
-                      <td>{item.title}</td>
-                      <td>
-                        <button
-                          type="button"
-                          className="btn danger"
-                          onClick={() => void handleDeleteSkillModule(item.id)}
-                        >
-                          Delete
-                        </button>
-                      </td>
+              {skillModules.length === 0 ? (
+                <EmptyState
+                  title="No skill modules yet"
+                  message="Add any preparation tracks or learning modules that should appear for participants."
+                />
+              ) : (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Order</th>
+                      <th>Id</th>
+                      <th>Title</th>
+                      <th />
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {skillModules.map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.sortOrder}</td>
+                        <td>{item.id}</td>
+                        <td>{item.title}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn danger"
+                            onClick={() => void handleDeleteSkillModule(item.id)}
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </section>
         </>

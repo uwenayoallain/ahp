@@ -3,7 +3,7 @@ import { PageHeader } from '../../components/ui/PageHeader'
 import { fetchAdminUsers } from './adminApi'
 
 type UserRow = {
-  id: number
+  id: string
   name: string
   email: string
   role: string
