@@ -7,11 +7,26 @@
     "dev": "pnpm -r --parallel --filter ./client --filter ./server dev",
     "build": "pnpm --filter ./client build && pnpm --filter ./server build",
     "lint": "pnpm --filter ./client lint && pnpm --filter ./server lint",
-    "test": "pnpm --filter ./server test"
+    "test": "pnpm --filter ./server test",
+    "test:system-pdf": "node --test scripts/generateSystemPdf.test.mjs",
+    "install:system-pdf-browser": "playwright install chromium",
+    "generate:system-pdf": "node scripts/generateSystemPdf.mjs",
+    "check:system-pdf": "node scripts/checkSystemPdf.mjs",
+    "prepare": "simple-git-hooks"
+  },
+  "devDependencies": {
+    "marked": "^17.0.1",
+    "mermaid": "^11.12.1",
+    "playwright": "^1.56.1",
+    "simple-git-hooks": "^2.13.1"
+  },
+  "simple-git-hooks": {
+    "pre-push": "pnpm check:system-pdf"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "esbuild"
+      "esbuild",
+      "playwright"
     ]
   }
 }
