@@ -84,6 +84,18 @@ A `fly.toml` is also included for Fly.io as an alternative.
 
 ---
 
+## Recent Changes
+
+- **Zustand state management** — Client-side store with 60-second cache staleness eliminates loading delays on navigation
+- **Markdown support** — Renderer (react-markdown + remark-gfm) and editor with write/preview toggle and formatting toolbar
+- **User profiles** — Profile page with display name, avatar URL, and bio; avatar displayed in navbar and sidebar
+- **Auth client fix** — Refactored Neon Auth client to avoid breaking better-auth's internal proxy chain
+- **Runtime config** — Client fetches server config at boot instead of relying on build-time env vars
+- **Docker production build** — Multi-stage Dockerfile with dynamic PGlite imports to avoid devDependency crashes
+- **Deployment configs** — `render.yaml` for Render, `fly.toml` for Fly.io, `docker-compose.yml` for local Docker
+
+---
+
 ## License
 
 Private
