@@ -80,8 +80,6 @@ Hosted free on **Render** (app) + **Neon** (database + auth).
 docker compose up --build
 ```
 
-A `fly.toml` is also included for Fly.io as an alternative.
-
 ---
 
 ## Recent Changes
@@ -92,10 +90,10 @@ A `fly.toml` is also included for Fly.io as an alternative.
 - **Auth client fix** — Refactored Neon Auth client to avoid breaking better-auth's internal proxy chain
 - **Runtime config** — Client fetches server config at boot instead of relying on build-time env vars
 - **Docker production build** — Multi-stage Dockerfile with dynamic PGlite imports to avoid devDependency crashes
-- **Deployment configs** — `render.yaml` for Render, `fly.toml` for Fly.io, `docker-compose.yml` for local Docker
+- **Deployment configs** — `render.yaml` for Render, `docker-compose.yml` for local Docker
 
 ---
 
 ## License
 
-Private
+[MIT](LICENSE)
