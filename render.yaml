@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: aegis-hackathon
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: NEON_AUTH_URL
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: '8080'

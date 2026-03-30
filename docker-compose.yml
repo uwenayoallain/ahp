@@ -1,0 +1,23 @@
+services:
+  ahp:
+    build:
+      context: .
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+    ports:
+      - '${PORT:-8080}:8080'
+    volumes:
+      - uploads:/app/server/uploads
+    healthcheck:
+      test: ['CMD', 'node', '-e', 'fetch("http://localhost:8080/api/health").then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  uploads:
