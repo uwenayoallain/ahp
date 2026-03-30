@@ -12,6 +12,7 @@ import { LeaderboardPage } from './pages/Leaderboard'
 import { LoginPage } from './pages/Login'
 import { MySubmissionsPage } from './pages/MySubmissions'
 import { NotFoundPage } from './pages/NotFound'
+import { ProfilePage } from './pages/Profile'
 import { RulesPage } from './pages/Rules'
 import { SchedulePage } from './pages/Schedule'
 import { SkillModulesPage } from './pages/SkillModules'
@@ -98,6 +99,7 @@ const router = createBrowserRouter([
       { path: 'submit', element: <SubmitProjectPage /> },
       { path: 'submissions', element: <MySubmissionsPage /> },
       { path: 'submissions/:id', element: <SubmissionDetailPage /> },
+      { path: 'profile', element: <ProfilePage /> },
       {
         path: 'admin',
         element: (

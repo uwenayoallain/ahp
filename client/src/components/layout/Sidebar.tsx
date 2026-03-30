@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { adminNav, participantNav } from './nav'
+import { Avatar } from '../ui/Avatar'
 
 function LinkRow({ to, label }: { to: string; label: string }) {
   return (
@@ -16,7 +17,7 @@ function LinkRow({ to, label }: { to: string; label: string }) {
 }
 
 export function Sidebar() {
-  const { userRole } = useAuth()
+  const { userName, userRole, userAvatar } = useAuth()
 
   return (
     <aside className="sidebar panel-surface">
@@ -41,6 +42,17 @@ export function Sidebar() {
           ))}
         </nav>
       )}
+
+      <NavLink
+        to="/app/profile"
+        className={({ isActive }) => `sidebar-profile ${isActive ? 'active' : ''}`}
+      >
+        <Avatar name={userName} src={userAvatar} size="sm" />
+        <div className="sidebar-profile-info">
+          <span className="sidebar-profile-name">{userName || 'Account'}</span>
+          <span className="sidebar-profile-role">{userRole ?? 'participant'}</span>
+        </div>
+      </NavLink>
     </aside>
   )
 }
